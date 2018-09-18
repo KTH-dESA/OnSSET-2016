@@ -75,8 +75,8 @@ SET_INVESTMENT_COST = 'InvestmentCost'  # The investment cost in USD
 
 # Columns in the specs file must match these exactly
 SPE_COUNTRY = 'Country'
-SPE_POP = 'Pop2015'  # The actual population in the base year
-SPE_URBAN = 'UrbanRatio2015'  # The ratio of urban population (range 0 - 1) in base year
+SPE_POP = 'Pop2016'  # The actual population in the base year
+SPE_URBAN = 'UrbanRatio2016'  # The ratio of urban population (range 0 - 1) in base year
 SPE_POP_FUTURE = 'Pop2030'
 SPE_URBAN_FUTURE = 'UrbanRatio2030'
 SPE_URBAN_MODELLED = 'UrbanRatioModelled'  # The urban ratio in the model after calibration (for comparison)
@@ -108,7 +108,7 @@ class Technology:
     input parameters.
     """
 
-    start_year = 2015
+    start_year = 2016
     end_year = 2030
     discount_rate = 0.08
     grid_cell_area = 1  # in km2, normally 1km2

@@ -154,11 +154,11 @@ elif choice == 2:
                                       discount_rate=0.0425,
                                       grid_cell_area=1,
                                       mv_line_cost=9000,
-                                      lv_line_cost=5000,
+                                      lv_line_cost=6426,
                                       mv_line_capacity=50,
                                       lv_line_capacity=10,
                                       lv_line_max_length=30,
-                                      hv_line_cost=53000,
+                                      hv_line_cost=70021,
                                       mv_line_max_length=50,
                                       hv_lv_transformer_cost=5000,
                                       mv_increase_rate=0.1)
@@ -178,7 +178,6 @@ elif choice == 2:
                                    base_to_peak_load_ratio=1,
                                    capacity_factor=0.5,
                                    tech_life=30,
-                                   capital_cost=5000,
                                    om_costs=0.02)
 
         mg_wind_calc = Technology(om_of_td_lines=0.03,
@@ -195,12 +194,12 @@ elif choice == 2:
                                 base_to_peak_load_ratio=0.9,
                                 tech_life=20,
                                 om_costs=0.015,
-                                capital_cost=4300)
+                                capital_cost=5280)
 
         sa_pv_calc = Technology(base_to_peak_load_ratio=0.9,
                                 tech_life=15,
                                 om_costs=0.012,
-                                capital_cost=5500,
+                                capital_cost=5870,
                                 standalone=True)
 
         mg_diesel_calc = Technology(om_of_td_lines=0.03,

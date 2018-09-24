@@ -178,6 +178,7 @@ elif choice == 2:
                                    base_to_peak_load_ratio=1,
                                    capacity_factor=0.5,
                                    tech_life=30,
+                                   capital_cost=16440,
                                    om_costs=0.02)
 
         mg_wind_calc = Technology(om_of_td_lines=0.03,

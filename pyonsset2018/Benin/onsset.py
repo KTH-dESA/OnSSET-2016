@@ -609,10 +609,10 @@ class SettlementProcessor:
             # Assign the 1 (electrified)/0 (un-electrified) values to each cell
             self.df[SET_ELEC_CURRENT] = self.df.apply(lambda row:
                                                       1
-                                                      if (row[SET_NIGHT_LIGHTS] > min_night_lights and
+                                                      if (row[SET_CURRENT_ELEC_DIST] < 3) and
                                                           (row[SET_POP_CALIB] > pop_cutoff or
                                                           row[SET_GRID_DIST_CURRENT] < max_grid_dist or
-                                                          row[SET_CURRENT_ELEC_DIST] < 10))
+                                                           row[SET_NIGHT_LIGHTS] > min_night_lights)
                                                       #or (row[SET_POP_CALIB] > pop_cutoff2 and
                                                       #    (row[SET_GRID_DIST_CURRENT] < grid_cutoff2 or
                                                       #     row[SET_ROAD_DIST] < road_cutoff2))

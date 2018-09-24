@@ -175,7 +175,7 @@ elif choice == 2:
         mg_hydro_calc = Technology(om_of_td_lines=0.03,
                                    distribution_losses=0.05,
                                    connection_cost_per_hh=100,
-                                   base_to_peak_load_ratio=1,
+                                   base_to_peak_load_ratio=0.9,
                                    capacity_factor=0.5,
                                    tech_life=30,
                                    capital_cost=16440,
@@ -184,7 +184,7 @@ elif choice == 2:
         mg_wind_calc = Technology(om_of_td_lines=0.03,
                                   distribution_losses=0.05,
                                   connection_cost_per_hh=100,
-                                  base_to_peak_load_ratio=0.75,
+                                  base_to_peak_load_ratio=0.9,
                                   capital_cost=2500,
                                   om_costs=0.02,
                                   tech_life=20)
@@ -194,19 +194,19 @@ elif choice == 2:
                                 connection_cost_per_hh=100,
                                 base_to_peak_load_ratio=0.9,
                                 tech_life=20,
-                                om_costs=0.015,
-                                capital_cost=5280)
+                                om_costs=0.02,
+                                capital_cost=4300)
 
         sa_pv_calc = Technology(base_to_peak_load_ratio=0.9,
                                 tech_life=15,
-                                om_costs=0.012,
+                                om_costs=0.02,
                                 capital_cost=5870,
                                 standalone=True)
 
         mg_diesel_calc = Technology(om_of_td_lines=0.03,
                                     distribution_losses=0.05,
                                     connection_cost_per_hh=100,
-                                    base_to_peak_load_ratio=0.5,
+                                    base_to_peak_load_ratio=0.9,
                                     capacity_factor=0.7,
                                     tech_life=15,
                                     om_costs=0.1,
@@ -216,7 +216,7 @@ elif choice == 2:
                                     diesel_truck_consumption=33.7,
                                     diesel_truck_volume=15000)
 
-        sa_diesel_calc = Technology(base_to_peak_load_ratio=0.5,
+        sa_diesel_calc = Technology(base_to_peak_load_ratio=0.9,
                                     capacity_factor=0.7,
                                     tech_life=10,
                                     om_costs=0.1,

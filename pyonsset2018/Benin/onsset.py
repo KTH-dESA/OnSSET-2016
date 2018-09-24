@@ -609,9 +609,9 @@ class SettlementProcessor:
             # Assign the 1 (electrified)/0 (un-electrified) values to each cell
             self.df[SET_ELEC_CURRENT] = self.df.apply(lambda row:
                                                       1
-                                                      if (row[SET_CURRENT_ELEC_DIST] < 3) and
+                                                      if (row[SET_CURRENT_ELEC_DIST] < 5) and
                                                           (row[SET_POP_CALIB] > pop_cutoff or
-                                                          row[SET_GRID_DIST_CURRENT] < max_grid_dist or
+                                                          #row[SET_GRID_DIST_CURRENT] < max_grid_dist or
                                                            row[SET_NIGHT_LIGHTS] > min_night_lights)
                                                       #or (row[SET_POP_CALIB] > pop_cutoff2 and
                                                       #    (row[SET_GRID_DIST_CURRENT] < grid_cutoff2 or
@@ -632,7 +632,7 @@ class SettlementProcessor:
                 print('2. Modelled electrification rate = {}'.format(elec_modelled))
                 break
             elif not is_round_two:
-                min_night_lights = sorted([5, min_night_lights - min_night_lights * 2 *
+                min_night_lights = sorted([10, min_night_lights - min_night_lights * 2 *
                                            (elec_actual - elec_modelled) / elec_actual, 60])[1]
                 max_grid_dist = sorted([5, max_grid_dist + max_grid_dist * 2 *
                                         (elec_actual - elec_modelled) / elec_actual, 150])[1]

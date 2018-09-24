@@ -39,6 +39,7 @@ SET_HYDRO = 'Hydropower'  # Hydropower potential in kW
 SET_HYDRO_DIST = 'HydropowerDist'  # Distance to hydropower site in km
 SET_HYDRO_FID = 'HydropowerFID'  # the unique tag for eah hydropower, to not over-utilise
 SET_SUBSTATION_DIST = 'SubstationDist'
+SET_CURRENT_ELEC_DIST = 'DistFromElectrified'
 SET_ELEVATION = 'Elevation'  # in metres
 SET_SLOPE = 'Slope'  # in degrees
 SET_LAND_COVER = 'LandCover'
@@ -358,6 +359,7 @@ class SettlementProcessor:
         self.df[SET_HYDRO_DIST] = pd.to_numeric(self.df[SET_HYDRO_DIST], errors='coerce')
         self.df[SET_HYDRO] = pd.to_numeric(self.df[SET_HYDRO], errors='coerce')
         self.df[SET_SOLAR_RESTRICTION] = pd.to_numeric(self.df[SET_SOLAR_RESTRICTION], errors='coerce')
+        self.df[SET_CURRENT_ELEC_DIST]=pd.to_numeric(self.df[SET_CURRENT_ELEC_DIST], errors = 'coerce')
 
         logging.info('Replace null values with zero')
         self.df.fillna(0, inplace=True)
@@ -610,10 +612,10 @@ class SettlementProcessor:
                                                       if (row[SET_NIGHT_LIGHTS] > min_night_lights and
                                                           (row[SET_POP_CALIB] > pop_cutoff or
                                                           row[SET_GRID_DIST_CURRENT] < max_grid_dist or
-                                                          row[SET_ROAD_DIST] < max_road_dist))
-                                                      or (row[SET_POP_CALIB] > pop_cutoff2 and
-                                                          (row[SET_GRID_DIST_CURRENT] < grid_cutoff2 or
-                                                           row[SET_ROAD_DIST] < road_cutoff2))
+                                                          row[SET_CURRENT_ELEC_DIST] < 10))
+                                                      #or (row[SET_POP_CALIB] > pop_cutoff2 and
+                                                      #    (row[SET_GRID_DIST_CURRENT] < grid_cutoff2 or
+                                                      #     row[SET_ROAD_DIST] < road_cutoff2))
                                                       else 0,
                                                       axis=1)
 

@@ -195,7 +195,7 @@ elif choice == 2:
                                 base_to_peak_load_ratio=0.9,
                                 tech_life=20,
                                 om_costs=0.02,
-                                capital_cost=4300)
+                                capital_cost=5280)
 
         sa_pv_calc = Technology(base_to_peak_load_ratio=0.9,
                                 tech_life=15,

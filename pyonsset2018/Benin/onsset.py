@@ -943,7 +943,7 @@ class SettlementProcessor:
         """
         Runs the pre-elec and grid extension algorithms
         """
-        grid_capacity_limit = 500000 # kW
+        grid_capacity_limit = 9999999999  # 400000 # kW
         # Calculate 2030 pre-electrification
         logging.info('Determine future pre-electrification status')
         self.df[SET_ELEC_FUTURE] = self.df.apply(lambda row: 1 if row[SET_ELEC_CURRENT] == 1 else 0, axis=1)

@@ -200,7 +200,7 @@ class Technology:
             capacity_factor = self.capacity_factor
 
         consumption = people / num_people_per_hh * energy_per_hh  # kWh/year
-        average_load = consumption * (1 + self.distribution_losses) / HOURS_PER_YEAR  # kW
+        average_load = consumption / (1 - self.distribution_losses) / HOURS_PER_YEAR  # kW
         peak_load = average_load / self.base_to_peak_load_ratio  # kW
 
         no_mv_lines = peak_load / self.mv_line_capacity
@@ -747,11 +747,13 @@ class SettlementProcessor:
 
         return unelec_list
 
-    def pre_elec(self, grid_lcoes_rural, grid_lcoes_urban, pre_elec_dist):
+    def pre_elec(self, grid_lcoes_rural, grid_lcoes_urban, pre_elec_dist, grid_calc, grid_capacity_limit):
         """
         Determine which settlements are economically close to existing or planned grid lines, and should be
         considered electrified in the electrification algorithm
         """
+        new_grid_capacity = 0
+        # grid_capacity_limit = 500000  # kW during model period
 
         df_neargrid = self.df.loc[self.df[SET_GRID_DIST_PLANNED] < pre_elec_dist]
 
@@ -761,11 +763,22 @@ class SettlementProcessor:
         status = df_neargrid[SET_ELEC_CURRENT].tolist()
         min_tech_lcoes = df_neargrid[SET_MIN_OFFGRID_LCOE].tolist()
         dist_planned = df_neargrid[SET_GRID_DIST_PLANNED].tolist()
+        demand = df_neargrid[SET_ENERGY_PER_HH].tolist()
+        new_conn = df_neargrid[SET_NEW_CONNECTIONS].tolist()
+        num_ppphh = df_neargrid[SET_NUM_PEOPLE_PER_HH].tolist()
 
         electrified, unelectrified = self.separate_elec_status(status)
 
-        for unelec in unelectrified:
+        for elec in electrified:
+            consumption = new_conn[elec] / num_ppphh[elec] * demand[elec]  # kWh/year
+            average_load = consumption / (1 - grid_calc.distribution_losses) / HOURS_PER_YEAR  # kW
+            peak_load = average_load / grid_calc.base_to_peak_load_ratio  # kW
+            new_grid_capacity += peak_load
 
+        for unelec in unelectrified:
+            consumption = pop[unelec] / num_ppphh[unelec] * demand[unelec]  # kWh/year
+            average_load = consumption / (1 - grid_calc.distribution_losses) / HOURS_PER_YEAR  # kW
+            peak_load = average_load / grid_calc.base_to_peak_load_ratio  # kW
             pop_index = pop[unelec]
             if pop_index < 1000:
                 pop_index = int(pop_index)
@@ -780,30 +793,45 @@ class SettlementProcessor:
                 grid_lcoe = grid_lcoes_rural[pop_index][int(grid_penalty_ratio[unelec] * dist_planned[unelec])]
 
             if grid_lcoe < min_tech_lcoes[unelec]:
-                status[unelec] = 1
+                if new_grid_capacity < grid_capacity_limit:
+                    new_grid_capacity += peak_load
+                    status[unelec] = 1
+                else:
+                    pass
 
         return status
 
-    def elec_extension(self, grid_lcoes_rural, grid_lcoes_urban, existing_grid_cost_ratio, max_dist, coordinate_units):
+    def elec_extension(self, grid_lcoes_rural, grid_lcoes_urban, existing_grid_cost_ratio, max_dist, coordinate_units, grid_calc, grid_capacity_limit):
         """
         Iterate through all electrified settlements and find which settlements can be economically connected to the grid
         Repeat with newly electrified settlements until no more are added
         """
-
+        new_grid_capacity = 0
+        # grid_capacity_limit = 400000  # kW during model period
         x = (self.df[SET_X]/coordinate_units).tolist()
         y = (self.df[SET_Y]/coordinate_units).tolist()
         pop = self.df[SET_POP_FUTURE].tolist()
+        old_pop = self.df[SET_POP_CALIB].tolist()
         urban = self.df[SET_URBAN].tolist()
         grid_penalty_ratio = self.df[SET_GRID_PENALTY].tolist()
         status = self.df[SET_ELEC_FUTURE].tolist()
         min_tech_lcoes = self.df[SET_MIN_OFFGRID_LCOE].tolist()
         new_lcoes = self.df[SET_LCOE_GRID].tolist()
+        num_ppphh = self.df[SET_NUM_PEOPLE_PER_HH].tolist()
+        demand = self.df[SET_ENERGY_PER_HH].tolist()
+        new_conn = self.df[SET_NEW_CONNECTIONS].tolist()
 
         cell_path_real = list(np.zeros(len(status)).tolist())
         cell_path_adjusted = list(np.zeros(len(status)).tolist())
         electrified, unelectrified = self.separate_elec_status(status)
 
         logging.info('Initially {} cells electrified'.format(len(electrified)))
+
+        for elec in electrified:
+            consumption = (new_conn[elec]) / num_ppphh[elec] * demand[elec]  # kWh/year
+            average_load = consumption / (1 - grid_calc.distribution_losses) / HOURS_PER_YEAR  # kW
+            peak_load = average_load / grid_calc.base_to_peak_load_ratio  # kW
+            new_grid_capacity += peak_load
 
         close = []
         elec_nodes2 = []
@@ -818,6 +846,10 @@ class SettlementProcessor:
             return np.argmin(dist_2)
 
         for unelec in unelectrified:
+            consumption = pop[unelec]/num_ppphh[unelec]*demand[unelec]  # kWh/year
+            average_load = consumption / (1 - grid_calc.distribution_losses) / HOURS_PER_YEAR  # kW
+            peak_load = average_load / grid_calc.base_to_peak_load_ratio  # kW
+
             pop_index = pop[unelec]
             if pop_index < 1000:
                 pop_index = int(pop_index)
@@ -844,10 +876,11 @@ class SettlementProcessor:
                             grid_lcoe = grid_lcoes_rural[pop_index][int(dist_adjusted)]
 
                         if grid_lcoe < min_tech_lcoes[unelec]:
-                            if grid_lcoe < new_lcoes[unelec]:
+                            if grid_lcoe < new_lcoes[unelec] and (new_grid_capacity + peak_load < grid_capacity_limit):
                                 new_lcoes[unelec] = grid_lcoe
                                 cell_path_real[unelec] = dist
                                 cell_path_adjusted[unelec] = dist_adjusted
+                                new_grid_capacity += peak_load
                                 if unelec not in changes:
                                     changes.append(unelec)
                             else:
@@ -860,7 +893,7 @@ class SettlementProcessor:
         unelectrified = close
 
         loops = 1
-        while len(electrified) > 0:
+        while len(electrified) > 0 and new_grid_capacity < grid_capacity_limit:
             logging.info('Electrification loop {} with {} electrified'.format(loops, len(electrified)))
             loops += 1
             hash_table = self.get_2d_hash_table(x, y, unelectrified, max_dist)
@@ -869,6 +902,9 @@ class SettlementProcessor:
             for elec in electrified:
                 unelectrified_hashed = self.get_unelectrified_rows(hash_table, elec, x, y, max_dist)
                 for unelec in unelectrified_hashed:
+                    consumption = pop[unelec] / num_ppphh[unelec] * demand[unelec]  # kWh/year
+                    average_load = consumption / (1 - grid_calc.distribution_losses) / HOURS_PER_YEAR  # kW
+                    peak_load = average_load / grid_calc.base_to_peak_load_ratio  # kW
                     prev_dist = cell_path_real[elec]
                     dist = sqrt((x[elec] - x[unelec]) ** 2 + (y[elec] - y[unelec]) ** 2)
                     if prev_dist + dist < max_dist:
@@ -889,6 +925,8 @@ class SettlementProcessor:
 
                         if grid_lcoe < min_tech_lcoes[unelec]:
                             if grid_lcoe < new_lcoes[unelec]:
+                                if new_lcoes[unelec] == 99:
+                                    new_grid_capacity += peak_load
                                 new_lcoes[unelec] = grid_lcoe
                                 cell_path_real[unelec] = dist + prev_dist
                                 cell_path_adjusted[unelec] = dist_adjusted
@@ -901,11 +939,11 @@ class SettlementProcessor:
         return new_lcoes, cell_path_adjusted
 
     def run_elec(self, grid_lcoes_rural, grid_lcoes_urban, grid_price,
-                 existing_grid_cost_ratio, max_dist, coordinate_units):
+                 existing_grid_cost_ratio, max_dist, coordinate_units, grid_calc):
         """
         Runs the pre-elec and grid extension algorithms
         """
-
+        grid_capacity_limit = 500000 # kW
         # Calculate 2030 pre-electrification
         logging.info('Determine future pre-electrification status')
         self.df[SET_ELEC_FUTURE] = self.df.apply(lambda row: 1 if row[SET_ELEC_CURRENT] == 1 else 0, axis=1)
@@ -913,14 +951,17 @@ class SettlementProcessor:
         pre_elec_dist = 10  # The maximum distance from the grid in km to pre-electrifiy settlements
         self.df.loc[self.df[SET_GRID_DIST_PLANNED] < pre_elec_dist, SET_ELEC_FUTURE] = self.pre_elec(grid_lcoes_rural,
                                                                                                      grid_lcoes_urban,
-                                                                                                     pre_elec_dist)
+                                                                                                     pre_elec_dist,
+                                                                                                     grid_calc,
+                                                                                                     grid_capacity_limit)
 
         self.df[SET_LCOE_GRID] = 99
         self.df[SET_LCOE_GRID] = self.df.apply(lambda row: grid_price if row[SET_ELEC_FUTURE] == 1 else 99, axis=1)
 
         self.df[SET_LCOE_GRID], self.df[SET_MIN_GRID_DIST] = self.elec_extension(grid_lcoes_rural, grid_lcoes_urban,
                                                                                  existing_grid_cost_ratio,
-                                                                                 max_dist, coordinate_units)
+                                                                                 max_dist, coordinate_units, grid_calc,
+                                                                                 grid_capacity_limit)
 
     def set_scenario_variables(self, energy_per_hh_rural, energy_per_hh_urban,
                                num_people_per_hh_rural, num_people_per_hh_urban):
@@ -1109,26 +1150,33 @@ class SettlementProcessor:
 
         logging.info('Calculate new capacity')
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_GRID, SET_NEW_CAPACITY] = (
-            (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
-            (HOURS_PER_YEAR * grid_calc.capacity_factor * grid_calc.base_to_peak_load_ratio))
+                (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
+                (HOURS_PER_YEAR * grid_calc.capacity_factor * grid_calc.base_to_peak_load_ratio
+                 * (1 - grid_calc.distribution_losses)))
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_MG_HYDRO, SET_NEW_CAPACITY] = (
-            (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
-            (HOURS_PER_YEAR * mg_hydro_calc.capacity_factor * mg_hydro_calc.base_to_peak_load_ratio))
+                (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
+                (HOURS_PER_YEAR * mg_hydro_calc.capacity_factor * mg_hydro_calc.base_to_peak_load_ratio
+                 * (1 - mg_hydro_calc.distribution_losses)))
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_MG_PV, SET_NEW_CAPACITY] = (
-            (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
-            (HOURS_PER_YEAR * (self.df[SET_GHI] / HOURS_PER_YEAR) * mg_pv_calc.base_to_peak_load_ratio))
+                (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
+                (HOURS_PER_YEAR * (self.df[SET_GHI] / HOURS_PER_YEAR) * mg_pv_calc.base_to_peak_load_ratio
+                 * (1 - mg_pv_calc.distribution_losses)))
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_MG_WIND, SET_NEW_CAPACITY] = (
-            (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
-            (HOURS_PER_YEAR * self.df[SET_WINDCF] * mg_wind_calc.base_to_peak_load_ratio))
+                (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
+                (HOURS_PER_YEAR * self.df[SET_WINDCF] * mg_wind_calc.base_to_peak_load_ratio
+                 * (1 - mg_wind_calc.distribution_losses)))
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_MG_DIESEL, SET_NEW_CAPACITY] = (
-            (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
-            (HOURS_PER_YEAR * mg_diesel_calc.capacity_factor * mg_diesel_calc.base_to_peak_load_ratio))
+                (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
+                (HOURS_PER_YEAR * mg_diesel_calc.capacity_factor * mg_diesel_calc.base_to_peak_load_ratio
+                 * (1 - mg_diesel_calc.distribution_losses)))
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_SA_DIESEL, SET_NEW_CAPACITY] = (
-            (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
-            (HOURS_PER_YEAR * sa_diesel_calc.capacity_factor * sa_diesel_calc.base_to_peak_load_ratio))
+                (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
+                (HOURS_PER_YEAR * sa_diesel_calc.capacity_factor * sa_diesel_calc.base_to_peak_load_ratio
+                 * (1 - sa_diesel_calc.distribution_losses)))
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_SA_PV, SET_NEW_CAPACITY] = (
-            (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
-            (HOURS_PER_YEAR * (self.df[SET_GHI] / HOURS_PER_YEAR) * sa_pv_calc.base_to_peak_load_ratio))
+                (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
+                (HOURS_PER_YEAR * (self.df[SET_GHI] / HOURS_PER_YEAR) * sa_pv_calc.base_to_peak_load_ratio
+                 * (1 - sa_pv_calc.distribution_losses)))
 
         logging.info('Calculate investment cost')
         self.df[SET_INVESTMENT_COST] = self.df.apply(res_investment_cost, axis=1)

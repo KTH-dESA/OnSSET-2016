@@ -238,7 +238,7 @@ elif choice == 2:
         grid_lcoes_urban = grid_calc.get_grid_table(energy_per_hh_urban, num_people_per_hh_urban,
                                                     max_grid_extension_dist)
         onsseter.run_elec(grid_lcoes_rural, grid_lcoes_urban, grid_price,
-                          existing_grid_cost_ratio, max_grid_extension_dist, coordinate_units)
+                          existing_grid_cost_ratio, max_grid_extension_dist, coordinate_units, grid_calc)
 
         onsseter.results_columns(mg_hydro_calc, mg_wind_calc, mg_pv_calc, sa_pv_calc,
                                  mg_diesel_calc, sa_diesel_calc, grid_calc)

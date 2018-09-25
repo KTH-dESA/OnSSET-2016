@@ -136,6 +136,10 @@ class Technology:
                  diesel_price=0.0,  # USD/litre
                  grid_price=0.0,  # USD/kWh for grid electricity
                  standalone=False,
+                 mg_pv=False,
+                 mg_wind=False,
+                 mg_diesel=False,
+                 mg_hydro=False,
                  grid_capacity_investment=0.0,  # USD/kW for on-grid capacity investments (excluding grid itself)
                  diesel_truck_consumption=0,  # litres/hour
                  diesel_truck_volume=0,  # litres
@@ -152,6 +156,10 @@ class Technology:
         self.diesel_price = diesel_price
         self.grid_price = grid_price
         self.standalone = standalone
+        self.mg_pv = mg_pv
+        self.mg_wind = mg_wind
+        self.mg_diesel = mg_diesel
+        self.mg_hydro = mg_hydro
         self.grid_capacity_investment = grid_capacity_investment
         self.diesel_truck_consumption = diesel_truck_consumption
         self.diesel_truck_volume = diesel_truck_volume
@@ -176,7 +184,8 @@ class Technology:
         cls.mv_increase_rate = mv_increase_rate
 
     def get_lcoe(self, energy_per_hh, people, num_people_per_hh, additional_mv_line_length=0, capacity_factor=0,
-                 mv_line_length=0, travel_hours=0, get_investment_cost=False):
+                 mv_line_length=0, travel_hours=0, get_investment_cost=False, mg_pv=False, mg_wind=False,
+                 mg_hydro=False, mg_diesel=False):
         """
         Calculates the LCOE depending on the parameters. Optionally calculates the investment cost instead.
 
@@ -239,13 +248,96 @@ class Technology:
             total_lv_lines_length *= 0 if self.standalone else 0.75
             mv_total_line_cost = self.mv_line_cost * mv_line_length
             lv_total_line_cost = self.lv_line_cost * total_lv_lines_length
-            installed_capacity = peak_load / capacity_factor
-            capital_investment = installed_capacity * self.capital_cost
             td_investment_cost = mv_total_line_cost + lv_total_line_cost + (
-                                                            people / num_people_per_hh) * self.connection_cost_per_hh
+                    people / num_people_per_hh) * self.connection_cost_per_hh
             td_om_cost = td_investment_cost * self.om_of_td_lines
-            total_investment_cost = td_investment_cost + capital_investment
-            total_om_cost = td_om_cost + (self.capital_cost * self.om_costs * installed_capacity)
+            installed_capacity = peak_load / capacity_factor
+
+            if self.standalone:
+                if self.diesel_price > 0:
+                        if (installed_capacity / people / num_people_per_hh) < 1:
+                            installed_capacity = 1 * people / num_people_per_hh
+                if installed_capacity < 0.020:
+                    capital_investment = installed_capacity * self.capital_cost[0.020]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[0.020] * self.om_costs * installed_capacity)
+                elif installed_capacity < 0.050:
+                    capital_investment = installed_capacity * self.capital_cost[0.050]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[0.050] * self.om_costs * installed_capacity)
+                elif installed_capacity < 0.100:
+                    capital_investment = installed_capacity * self.capital_cost[0.100]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[0.100] * self.om_costs * installed_capacity)
+                elif installed_capacity < 0.200:
+                    capital_investment = installed_capacity * self.capital_cost[0.200]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[0.200] * self.om_costs * installed_capacity)
+                else:
+                    capital_investment = installed_capacity * self.capital_cost[0.300]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[0.300] * self.om_costs * installed_capacity)
+            elif self.mg_pv:
+                if installed_capacity < 50:
+                    capital_investment = installed_capacity * self.capital_cost[50]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[50] * self.om_costs * installed_capacity)
+                elif installed_capacity < 75:
+                    capital_investment = installed_capacity * self.capital_cost[75]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[75] * self.om_costs * installed_capacity)
+                elif installed_capacity < 100:
+                    capital_investment = installed_capacity * self.capital_cost[100]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[100] * self.om_costs * installed_capacity)
+                else:
+                    capital_investment = installed_capacity * self.capital_cost[200]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[200] * self.om_costs * installed_capacity)
+            elif self.mg_wind:
+                if installed_capacity < 100:
+                    capital_investment = installed_capacity * self.capital_cost[100]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[100] * self.om_costs * installed_capacity)
+                elif installed_capacity < 1000:
+                    capital_investment = installed_capacity * self.capital_cost[1000]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[1000] * self.om_costs * installed_capacity)
+                else:
+                    capital_investment = installed_capacity * self.capital_cost[10000]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[10000] * self.om_costs * installed_capacity)
+            elif self.mg_hydro:
+                if installed_capacity < 1:
+                    capital_investment = installed_capacity * self.capital_cost[1]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[1] * self.om_costs * installed_capacity)
+                elif installed_capacity < 100:
+                    capital_investment = installed_capacity * self.capital_cost[100]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[100] * self.om_costs * installed_capacity)
+                else:
+                    capital_investment = installed_capacity * self.capital_cost[5000]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[5000] * self.om_costs * installed_capacity)
+            elif self.mg_diesel:
+                if installed_capacity < 100:
+                    capital_investment = installed_capacity * self.capital_cost[100]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[100] * self.om_costs * installed_capacity)
+                elif installed_capacity < 1000:
+                    capital_investment = installed_capacity * self.capital_cost[1000]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[1000] * self.om_costs * installed_capacity)
+                elif installed_capacity < 5000:
+                    capital_investment = installed_capacity * self.capital_cost[5000]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[5000] * self.om_costs * installed_capacity)
+                else:
+                    capital_investment = installed_capacity * self.capital_cost[25000]
+                    total_investment_cost = td_investment_cost + capital_investment
+                    total_om_cost = td_om_cost + (self.capital_cost[25000] * self.om_costs * installed_capacity)
+
 
             # If a diesel price has been passed, the technology is diesel
             if self.diesel_price > 0:

@@ -257,19 +257,19 @@ class Technology:
                 if self.diesel_price > 0:
                         if (installed_capacity / people / num_people_per_hh) < 1:
                             installed_capacity = 1 * people / num_people_per_hh
-                if installed_capacity < 0.020:
+                if installed_capacity / (people / num_people_per_hh) < 0.020:
                     capital_investment = installed_capacity * self.capital_cost[0.020]
                     total_investment_cost = td_investment_cost + capital_investment
                     total_om_cost = td_om_cost + (self.capital_cost[0.020] * self.om_costs * installed_capacity)
-                elif installed_capacity < 0.050:
+                elif installed_capacity / (people / num_people_per_hh) < 0.050:
                     capital_investment = installed_capacity * self.capital_cost[0.050]
                     total_investment_cost = td_investment_cost + capital_investment
                     total_om_cost = td_om_cost + (self.capital_cost[0.050] * self.om_costs * installed_capacity)
-                elif installed_capacity < 0.100:
+                elif installed_capacity / (people / num_people_per_hh) < 0.100:
                     capital_investment = installed_capacity * self.capital_cost[0.100]
                     total_investment_cost = td_investment_cost + capital_investment
                     total_om_cost = td_om_cost + (self.capital_cost[0.100] * self.om_costs * installed_capacity)
-                elif installed_capacity < 0.200:
+                elif installed_capacity / (people / num_people_per_hh) < 0.200:
                     capital_investment = installed_capacity * self.capital_cost[0.200]
                     total_investment_cost = td_investment_cost + capital_investment
                     total_om_cost = td_om_cost + (self.capital_cost[0.200] * self.om_costs * installed_capacity)

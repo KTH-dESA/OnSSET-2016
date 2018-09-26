@@ -178,7 +178,7 @@ elif choice == 2:
                                    base_to_peak_load_ratio=0.9,
                                    capacity_factor=0.5,
                                    tech_life=30,
-                                   capital_cost={1: 4269, 100: 2525, 5000: 1542},
+                                   capital_cost={1: 16440, 100: 16440, 5000: 16440},
                                    om_costs=0.02,
                                    mg_hydro=True)
 
@@ -186,7 +186,7 @@ elif choice == 2:
                                   distribution_losses=0.05,
                                   connection_cost_per_hh=100,
                                   base_to_peak_load_ratio=0.9,
-                                  capital_cost={100: 2100, 1000: 2022, 10000: 1241},
+                                  capital_cost={100: 2500, 1000: 2500, 10000: 2500},
                                   om_costs=0.02,
                                   tech_life=20,
                                   mg_wind=True)
@@ -197,7 +197,7 @@ elif choice == 2:
                                 base_to_peak_load_ratio=0.9,
                                 tech_life=20,
                                 om_costs=0.02,
-                                capital_cost={50: 8964, 75: 5742, 100: 3192, 200: 1863},
+                                capital_cost={50: 5280, 75: 5280, 100: 5280, 200: 5280},
                                 mg_pv=True)
 
         sa_pv_calc = Technology(base_to_peak_load_ratio=0.9,
@@ -214,7 +214,7 @@ elif choice == 2:
                                     tech_life=15,
                                     om_costs=0.1,
                                     efficiency=0.33,
-                                    capital_cost={100: 701, 1000: 656, 5000: 454, 25000: 381},
+                                    capital_cost={100: 721, 1000: 721, 5000: 721, 25000: 721},
                                     diesel_price=diesel_price,
                                     diesel_truck_consumption=33.7,
                                     diesel_truck_volume=15000,

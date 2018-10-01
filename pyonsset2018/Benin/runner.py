@@ -154,11 +154,11 @@ elif choice == 2:
                                       discount_rate=0.0425,
                                       grid_cell_area=1,
                                       mv_line_cost=9000,
-                                      lv_line_cost=6426,
+                                      lv_line_cost=5000,
                                       mv_line_capacity=50,
                                       lv_line_capacity=10,
                                       lv_line_max_length=30,
-                                      hv_line_cost=70021,
+                                      hv_line_cost=53000,
                                       mv_line_max_length=50,
                                       hv_lv_transformer_cost=5000,
                                       mv_increase_rate=0.1)
@@ -231,11 +231,30 @@ elif choice == 2:
                                     diesel_truck_consumption=14,
                                     diesel_truck_volume=300)
 
+        pv_diesel_hyb = Technology(om_of_td_lines=0.03,
+                                   distribution_losses=0.05,
+                                   connection_cost_per_hh=100,
+                                   base_to_peak_load_ratio=0.5,
+                                   tech_life=15,
+                                   diesel_price=diesel_price,
+                                   diesel_truck_consumption=33.7,
+                                   diesel_truck_volume=15000)
+
+
         onsseter.set_scenario_variables(energy_per_hh_rural, energy_per_hh_urban,
                                         num_people_per_hh_rural, num_people_per_hh_urban)
 
+        print('Preparing urban mg pv-diesel hybrid reference table')
+        urban_hybrid = pv_diesel_hyb.pv_diesel_hybrid(energy_per_hh_urban, max(onsseter.df[SET_GHI]),
+                                                      max(onsseter.df[SET_TRAVEL_HOURS]))
+
+        print('Preparing rural mg pv-diesel hybrid reference table')
+        rural_hybrid = pv_diesel_hyb.pv_diesel_hybrid(energy_per_hh_rural, max(onsseter.df[SET_GHI]),
+                                                      max(onsseter.df[SET_TRAVEL_HOURS]))
+
         onsseter.calculate_off_grid_lcoes(mg_hydro_calc, mg_wind_calc, mg_pv_calc,
-                                          sa_pv_calc, mg_diesel_calc, sa_diesel_calc)
+                                          sa_pv_calc, mg_diesel_calc, sa_diesel_calc,
+                                          pv_diesel_hyb, urban_hybrid, rural_hybrid)
 
         grid_lcoes_rural = grid_calc.get_grid_table(energy_per_hh_rural, num_people_per_hh_rural,
                                                     max_grid_extension_dist)
@@ -245,7 +264,7 @@ elif choice == 2:
                           existing_grid_cost_ratio, max_grid_extension_dist, coordinate_units, grid_calc)
 
         onsseter.results_columns(mg_hydro_calc, mg_wind_calc, mg_pv_calc, sa_pv_calc,
-                                 mg_diesel_calc, sa_diesel_calc, grid_calc)
+                                 mg_diesel_calc, sa_diesel_calc, grid_calc, pv_diesel_hyb, urban_hybrid, rural_hybrid)
 
         summary = onsseter.calc_summaries()
         summary.name = country

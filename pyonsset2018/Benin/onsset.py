@@ -7,10 +7,11 @@
 
 import logging
 import pandas as pd
-from math import pi, exp, log, sqrt
+from math import pi, exp, log, sqrt, ceil
 # from pyproj import Proj
 import numpy as np
 from collections import defaultdict
+import os
 
 logging.basicConfig(format='%(asctime)s\t\t%(message)s', level=logging.DEBUG)
 
@@ -65,6 +66,7 @@ SET_LCOE_MG_WIND = 'MG_Wind'
 SET_LCOE_MG_DIESEL = 'MG_Diesel'
 SET_LCOE_MG_PV = 'MG_PV'
 SET_LCOE_MG_HYDRO = 'MG_Hydro'
+SET_LCOE_MG_HYBRID = 'MG_Hybrid'
 SET_MIN_OFFGRID = 'MinimumOffgrid'  # The technology with lowest lcoe (excluding grid)
 SET_MIN_OVERALL = 'MinimumOverall'  # Same as above, but including grid
 SET_MIN_OFFGRID_LCOE = 'MinimumTechLCOE'  # The lcoe value for minimum tech
@@ -165,6 +167,219 @@ class Technology:
         self.diesel_truck_volume = diesel_truck_volume
         self.om_of_td_lines = om_of_td_lines
 
+    def pv_diesel_hybrid(self,
+                         energy_per_hh,  # kWh/household/year as defined
+                         max_ghi,  # highest annual GHI value encountered in the GIS data
+                         max_travel_hours,  # highest value for travel hours encountered in the GIS data
+                         diesel_no=1, # 50,  # number of diesel generators simulated
+                         pv_no=1, #70, # number of PV panel sizes simulated
+                         n_chg=0.92,  # charge efficiency of battery
+                         n_dis=0.92,  # discharge efficiency of battery
+                         lpsp=0.05,  # maximum loss of load allowed over the year, in share of kWh
+                         battery_cost=150,  # battery capital capital cost, USD/kWh of storage capacity
+                         pv_cost=2490,  # PV panel capital cost, USD/kW peak power
+                         diesel_cost=550,  # diesel generator capital cost, USD/kW rated power
+                         pv_life=20,  # PV panel expected lifetime, years
+                         diesel_life=15,  # diesel generator expected lifetime, years
+                         pv_om=0.015,  # annual OM cost of PV panels
+                         diesel_om=0.1,  # annual OM cost of diesel generator
+                         k_t=0.005):  # temperature factor of PV panels
+        os.chdir(r'C:\Users\Andreas\Documents\GitHub\PyOnSSET\pyonsset2018\Benin')
+        ghi = pd.read_csv('TanzaniaHourlyLat11Long35Redigerad.csv', usecols=[4], sep=';', skiprows=21).as_matrix()
+        # hourly GHI values downloaded from SoDa for one location in the country
+        temp = pd.read_csv('TanzaniaTempLat11Long35.csv', usecols=[4], sep=';', skiprows=21).as_matrix()
+        # hourly temperature values downloaded from SoDa for one location in the country
+        hour_numbers = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23) * 365
+
+        LHV_DIESEL = 9.9445485
+        dod_max = 0.8  # maximum depth of discharge of battery
+
+        # the values below define the load curve for the five tiers. The values reflect the share of the daily demand
+        # expected in each hour of the day (sum of all values for one tier = 1)
+        tier5_load_curve = np.array([0.021008403, 0.021008403, 0.021008403, 0.021008403, 0.027310924, 0.037815126,
+                                     0.042016807, 0.042016807, 0.042016807, 0.042016807, 0.042016807, 0.042016807,
+                                     0.042016807, 0.042016807, 0.042016807, 0.042016807, 0.046218487, 0.050420168,
+                                     0.067226891, 0.084033613, 0.073529412, 0.052521008, 0.033613445, 0.023109244])
+        tier4_load_curve = np.array([0.017167382, 0.017167382, 0.017167382, 0.017167382, 0.025751073, 0.038626609,
+                                     0.042918455, 0.042918455, 0.042918455, 0.042918455, 0.042918455, 0.042918455,
+                                     0.042918455, 0.042918455, 0.042918455, 0.042918455, 0.0472103, 0.051502146,
+                                     0.068669528, 0.08583691, 0.075107296, 0.053648069, 0.034334764, 0.021459227])
+        tier3_load_curve = np.array([0.013297872, 0.013297872, 0.013297872, 0.013297872, 0.019060284, 0.034574468,
+                                     0.044326241, 0.044326241, 0.044326241, 0.044326241, 0.044326241, 0.044326241,
+                                     0.044326241, 0.044326241, 0.044326241, 0.044326241, 0.048758865, 0.053191489,
+                                     0.070921986, 0.088652482, 0.077570922, 0.055407801, 0.035460993, 0.019946809])
+        tier2_load_curve = np.array([0.010224949, 0.010224949, 0.010224949, 0.010224949, 0.019427403, 0.034764826,
+                                     0.040899796, 0.040899796, 0.040899796, 0.040899796, 0.040899796, 0.040899796,
+                                     0.040899796, 0.040899796, 0.040899796, 0.040899796, 0.04601227, 0.056237219,
+                                     0.081799591, 0.102249489, 0.089468303, 0.06390593, 0.038343558, 0.017893661])
+        tier1_load_curve = np.array([0, 0, 0, 0, 0.012578616, 0.031446541, 0.037735849, 0.037735849, 0.037735849,
+                                     0.037735849, 0.037735849, 0.037735849, 0.037735849, 0.037735849, 0.037735849,
+                                     0.037735849, 0.044025157, 0.062893082, 0.100628931, 0.125786164, 0.110062893,
+                                     0.078616352, 0.044025157, 0.012578616])
+        if energy_per_hh < 75:
+            load_curve = tier1_load_curve * energy_per_hh / 365
+        elif energy_per_hh < 365:
+            load_curve = tier2_load_curve * energy_per_hh / 365
+        elif energy_per_hh < 1241:
+            load_curve = tier3_load_curve * energy_per_hh / 365
+        elif energy_per_hh < 2993:
+            load_curve = tier4_load_curve * energy_per_hh / 365
+        else:
+            load_curve = tier5_load_curve * energy_per_hh / 365
+
+
+        def pv_diesel_capacities(pv_capacity, battery_size, diesel_capacity, initital_condition=False):
+            condition = 1
+            ren_limit = 0
+            break_hour = 17
+            while condition > lpsp:
+                dod = np.zeros(24)
+                battery_use = np.zeros(24)  # Stores the amount of battery discharge during the day
+                fuel_result = 0
+                battery_life = 0
+                soc = 0.5
+                unmet_demand = 0
+                annual_diesel_gen = 0
+                for i in range(8760):
+                    diesel_gen = 0
+                    battery_use[hour_numbers[i]] = 0.0002 * soc  # Battery self-discharge
+                    soc *= 0.9998
+                    t_cell = temp[i] + 0.0256 * ghi[i]  # PV cell temperature
+                    pv_gen = pv_capacity * 0.9 * ghi[i] / 1000 * (
+                    1 - k_t * (t_cell - 298.15))  # PV generation in the hour
+                    net_load = load_curve[hour_numbers[i]] - pv_gen  # remaining load not met by PV panels
+                    if net_load <= 0:  # If pv generation is greater than load the excess energy is stored in battery
+                        if battery_size > 0:
+                            soc -= n_chg * net_load / battery_size
+                        net_load = 0
+                    max_diesel = min(diesel_capacity, net_load + (1 - soc) * battery_size / n_chg)
+                    #  Maximum aount of diesel needed to supply load and charge battery, limited by rated diesel capacity
+
+                    # Below is the dispatch strategy for the diesel generator as described in word document
+                    if break_hour + 1 > hour_numbers[i] > 4 and net_load > soc * battery_size * n_dis:
+                        diesel_gen = min(diesel_capacity, max(0.4 * diesel_capacity, net_load))
+                    elif 23 > hour_numbers[i] > break_hour and max_diesel > 0.40 * diesel_capacity:
+                        diesel_gen = max_diesel
+                    elif n_dis * soc * battery_size < net_load:
+                        diesel_gen = max(0.4 * diesel_capacity, max_diesel)
+
+                    if diesel_gen > 0:  # Fuel consumption is stored
+                        fuel_result += diesel_capacity * 0.08145 + diesel_gen * 0.246
+                        annual_diesel_gen += diesel_gen
+
+                    if (net_load - diesel_gen) > 0:  # If diesel generator cannot meet load the battery is also used
+                        if battery_size > 0:
+                            soc -= (net_load - diesel_gen) / n_dis / battery_size
+                            battery_use[hour_numbers[i]] += (net_load - diesel_gen) / n_dis / battery_size
+                            if soc < 0:  # If battery and diesel generator cannot supply load there is unmet demand
+                                unmet_demand -= soc * n_dis * battery_size
+                                battery_use[hour_numbers[i]] += soc
+                                soc = 0
+                    else:  # If diesel generation is larger than load the excess energy is stored in battery
+                        if battery_size > 0:
+                            soc += (diesel_gen - net_load) * n_chg / battery_size
+
+                    if battery_size == 0:  # If no battery and diesel generation < net load there is unmet demand
+                        unmet_demand += net_load - diesel_gen
+                    soc = min(soc, 1)  # Battery state of charge cannot be >1
+
+                    dod[hour_numbers[i]] = 1 - soc  # The depth of discharge in every hour of the day is storeed
+                    if hour_numbers[i] == 23 and max(dod) > 0:  # The battery wear during the last day is calculated
+                        battery_life += sum(battery_use) / (531.52764 * max(0.1, (max(dod) * dod_max)) ** -1.12297)
+
+                condition = unmet_demand / energy_per_hh  # lpsp is calculated
+                if initital_condition:  # During the first calculation the minimum PV size with no diesel generator is calculated
+                    if condition > lpsp:
+                        pv_capacity *= (1 + unmet_demand / energy_per_hh / 4)
+                elif condition > lpsp or (annual_diesel_gen > (1 - ren_limit) * energy_per_hh):  # For the remaining configurations the solution is considered unusable if lpsp criteria is not met
+                    diesel_capacity = 99
+                    condition = 0
+                    battery_life = 1
+                elif condition < lpsp:  # If lpsp criteria is met the expected battery life is stored
+                    battery_life = np.round(1 / battery_life)
+            return pv_capacity, diesel_capacity, battery_size, fuel_result, battery_life
+
+        # Initial PV size when no diesel generator is used is calculated and used as reference
+        ref = pv_diesel_capacities(energy_per_hh / 3000, 2 * energy_per_hh / 365, 0, initital_condition=True)
+
+        battery_sizes = [0.3 * energy_per_hh / 365, 0.5 * energy_per_hh / 365, 0.75 * energy_per_hh / 365, energy_per_hh / 365, 2 * energy_per_hh / 365, 0]  # [2 * energy_per_hh / 365, energy_per_hh / 365, 0]
+        ref_battery_size = np.zeros((len(battery_sizes), pv_no, diesel_no))
+        ref_panel_size = np.zeros((len(battery_sizes), pv_no, diesel_no))
+        ref_diesel_cap = np.zeros((len(battery_sizes), pv_no, diesel_no))
+        ref_fuel_result = np.zeros((len(battery_sizes), pv_no, diesel_no))
+        ref_battery_life = np.zeros((len(battery_sizes), pv_no, diesel_no))
+
+        # For the number of diesel, pv and battery capacities the lpsp, battery lifetime and fuel usage is calculated
+        for k in range(len(battery_sizes)):
+            for i in range(pv_no):
+                for j in range(diesel_no):
+                    a = pv_diesel_capacities(ref[0] * (pv_no - i) / pv_no, battery_sizes[k],
+                                             j * max(load_curve) / diesel_no)
+                    ref_panel_size[k, i, j] = a[0]
+                    ref_diesel_cap[k, i, j] = a[1]
+                    ref_battery_size[k, i, j] = a[2]
+                    ref_fuel_result[k, i, j] = a[3]
+                    ref_battery_life[k, i, j] = min(20, a[4])  # Battery life limited to maximum 20 years
+
+        # Neccessary information for calculation of LCOE is defined
+        project_life = self.end_year - self.start_year
+        ghi_steps = int(
+            ceil((max_ghi - 1000) / 50) + 1)  # GHI values rounded to nearest 50 are used for reference matrix
+        diesel_cost_max = 2 * self.diesel_price * self.diesel_truck_consumption * max_travel_hours / self.diesel_truck_volume / LHV_DIESEL
+        diesel_steps = int(
+            ceil(diesel_cost_max * 100) + 1)  # Diesel values rounded to 0.01 USD used for reference matrix
+        generation = np.ones(project_life) * energy_per_hh
+        generation[0] = 0
+        year = np.arange(project_life)
+        discount_factor = (1 + self.discount_rate) ** year
+        investment_table = np.zeros((ghi_steps, diesel_steps))  # Stores least-cost configuration investments
+        pv_table = np.zeros((ghi_steps, diesel_steps))  # Stores PV size for least-cost configuraton
+        diesel_table = np.zeros((ghi_steps, diesel_steps))  # Stores diesel capacity for least-cost configuration
+        lcoe_table = np.ones((ghi_steps, diesel_steps)) * 99  # Stores LCOE for least-cost configuration
+        choice_table = np.zeros((ghi_steps, diesel_steps))
+
+        # For each combination of GHI and diesel price the least costly configuration is calculated by iterating through
+        # the different configurations specified above
+        for i in range(ghi_steps):
+            pv_size = ref_panel_size * ghi.sum() / 1000 / (1000 + 50 * i)
+            for j in range(diesel_steps):
+                for k in range(pv_no):
+                    for l in range(diesel_no):
+                        for m in range(len(battery_sizes)):
+                            investments = np.zeros(project_life)
+                            salvage = np.zeros(project_life)
+                            fuel_costs = np.ones(project_life) * ref_fuel_result[m, k, l] * (self.diesel_price + 0.01 * j)
+                            investments[0] = pv_size[m, k, l] * pv_cost + ref_diesel_cap[m, k, l] * diesel_cost
+                            salvage[-1] = ref_diesel_cap[m, k, l] * diesel_cost * (1 - project_life / diesel_life) + \
+                                          pv_size[m, k, l] * pv_cost * (1 - project_life / pv_life)
+                            om = np.ones(project_life) * (
+                                pv_size[m, k, l] * pv_cost * pv_om + ref_diesel_cap[m, k, l] * diesel_cost * diesel_om)
+                            if pv_life < project_life:
+                                investments[pv_life] = pv_size[m, k, l] * pv_cost
+                            if diesel_life < project_life:
+                                investments[diesel_life] = ref_diesel_cap[m, k, l] * diesel_cost
+                            for n in range(project_life):
+                                if year[n] % ref_battery_life[m, k, l] == 0:
+                                    investments[n] += ref_battery_size[m, k, l] * battery_cost / dod_max
+                            salvage[-1] += (1 - (
+                            (project_life % ref_battery_life[m, k, l]) / ref_battery_life[m, k, l])) * \
+                                           battery_cost * ref_battery_size[m, k, l] / dod_max + ref_diesel_cap[
+                                                                                                    m, k, l] * \
+                                                                                                diesel_cost * (1 - (
+                            project_life % diesel_life) / diesel_life) \
+                                           + pv_size[m, k, l] * pv_cost * (1 - (project_life % pv_life) / pv_life)
+                            discount_investments = (investments + fuel_costs - salvage + om) / discount_factor
+                            discount_generation = generation / discount_factor
+                            lcoe = np.sum(discount_investments) / np.sum(discount_generation)
+                            if lcoe < lcoe_table[i, j]:
+                                lcoe_table[i, j] = lcoe
+                                pv_table[i, j] = pv_size[m, k, l]
+                                diesel_table[i, j] = ref_diesel_cap[m, k, l]
+                                investment_table[i, j] = np.sum(discount_investments)
+                                choice_table[i, j] = (l + 1) * 10 + (k + 1) * 10000 + m + 1
+                                # first number is PV size, second is diesel, third is battery
+        return lcoe_table, pv_table, diesel_table, investment_table, load_curve[19], choice_table
+
     @classmethod
     def set_default_values(cls, start_year, end_year, discount_rate, grid_cell_area, mv_line_cost, lv_line_cost,
                            mv_line_capacity, lv_line_capacity, lv_line_max_length, hv_line_cost, mv_line_max_length,
@@ -184,8 +399,9 @@ class Technology:
         cls.mv_increase_rate = mv_increase_rate
 
     def get_lcoe(self, energy_per_hh, people, num_people_per_hh, additional_mv_line_length=0, capacity_factor=0,
-                 mv_line_length=0, travel_hours=0, get_investment_cost=False, mg_pv=False, mg_wind=False,
-                 mg_hydro=False, mg_diesel=False):
+                 mv_line_length=0, travel_hours=0, ghi=0, urban=0, get_capacity=False, mini_grid=False, pv=False,
+                 urban_hybrid=0, rural_hybrid=0, get_investment_cost=False, mg_pv=False, mg_wind=False,
+                 mg_hydro=False, mg_diesel=False, mg_hybrid=False):
         """
         Calculates the LCOE depending on the parameters. Optionally calculates the investment cost instead.
 
@@ -210,7 +426,15 @@ class Technology:
 
         consumption = people / num_people_per_hh * energy_per_hh  # kWh/year
         average_load = consumption / (1 - self.distribution_losses) / HOURS_PER_YEAR  # kW
-        peak_load = average_load / self.base_to_peak_load_ratio  # kW
+
+        if mg_hybrid and urban == 1:
+            peak_load = urban_hybrid[4] * consumption
+            # peak_load = people / num_people_per_hh * urban_hybrid[4] * (1 + self.distribution_losses)
+        elif mg_hybrid and urban == 0:
+            peak_load = rural_hybrid[4] * consumption
+            # peak_load = people / num_people_per_hh * rural_hybrid[4] * (1 + self.distribution_losses)
+        else:
+            peak_load = average_load / self.base_to_peak_load_ratio  # kW
 
         no_mv_lines = peak_load / self.mv_line_capacity
         no_lv_lines = peak_load / self.lv_line_capacity
@@ -230,7 +454,7 @@ class Technology:
         generation_per_year = average_load * HOURS_PER_YEAR
 
         # The investment and O&M costs are different for grid and non-grid solutions
-        if self.grid_price > 0:
+        if self.grid_price > 0 :
             td_investment_cost = hv_lines_total_length * self.hv_line_cost + \
                                  total_length_of_lines * self.mv_line_cost + \
                                  total_lv_lines_length * self.lv_line_cost + \
@@ -337,10 +561,13 @@ class Technology:
                     capital_investment = installed_capacity * self.capital_cost[25000]
                     total_investment_cost = td_investment_cost + capital_investment
                     total_om_cost = td_om_cost + (self.capital_cost[25000] * self.om_costs * installed_capacity)
-
+            elif mg_hybrid:
+                capital_investment = installed_capacity * self.capital_cost
+                total_investment_cost = td_investment_cost + capital_investment
+                total_om_cost = td_om_cost + (self.capital_cost * self.om_costs * installed_capacity)
 
             # If a diesel price has been passed, the technology is diesel
-            if self.diesel_price > 0:
+            if self.diesel_price > 0 and not mg_hybrid:
                 # And we apply the Szabo formula to calculate the transport cost for the diesel
                 # p = (p_d + 2*p_d*consumption*time/volume)*(1/mu)*(1/LHVd)
                 fuel_cost = (self.diesel_price + 2 * self.diesel_price * self.diesel_truck_consumption * travel_hours /
@@ -378,14 +605,50 @@ class Technology:
         fuel = el_gen * fuel_cost
         fuel[0] = 0
 
+        if mg_hybrid:
+            diesel_lookup = int(round(2 * self.diesel_price * self.diesel_truck_consumption *
+                                      travel_hours / self.diesel_truck_volume / LHV_DIESEL * 100))
+            renewable_lookup = int(round((ghi - 1000) / 50))
+
+            if urban == 1 and pv:
+                ref_table = urban_hybrid[0]
+                ref_investments = urban_hybrid[3]
+                ref_capacity = urban_hybrid[1] + urban_hybrid[2]
+            elif urban == 0 and pv:
+                ref_table = rural_hybrid[0]
+                ref_investments = rural_hybrid[3]
+                ref_capacity = rural_hybrid[1] + rural_hybrid[2]
+            elif urban == 1 and wind:
+                ref_table = urban_hybrid[0]
+                ref_investments = urban_hybrid[3]
+                ref_capacity = urban_hybrid[1] + urban_hybrid[2]
+            elif urban == 0 and wind:
+                ref_table = rural_hybrid[0]
+                ref_investments = rural_hybrid[3]
+                ref_capacity = rural_hybrid[1] + rural_hybrid[2]
+
+            add_lcoe = ref_table[renewable_lookup, diesel_lookup]
+            add_investments = ref_investments[renewable_lookup, diesel_lookup] * people / num_people_per_hh
+            add_capacity = ref_capacity[renewable_lookup, diesel_lookup] * people / num_people_per_hh
+
         # So we also return the total investment cost for this number of people
         if get_investment_cost:
             discounted_investments = investments / discount_factor
-            return np.sum(discounted_investments) + self.grid_capacity_investment * peak_load
+            if mini_grid:
+                return add_investments + np.sum(discounted_investments)
+            else:
+                return np.sum(discounted_investments) + self.grid_capacity_investment * peak_load
+            # return np.sum(discounted_investments) + self.grid_capacity_investment * peak_load
+        elif get_capacity:
+            return add_capacity
         else:
             discounted_costs = (investments + operation_and_maintenance + fuel - salvage) / discount_factor
             discounted_generation = el_gen / discount_factor
-            return np.sum(discounted_costs) / np.sum(discounted_generation)
+            if mini_grid:
+                return np.sum(discounted_costs) / np.sum(discounted_generation) + add_lcoe
+            else:
+                return np.sum(discounted_costs) / np.sum(discounted_generation)
+            # return np.sum(discounted_costs) / np.sum(discounted_generation)
 
     def get_grid_table(self, energy_per_hh, num_people_per_hh, max_dist):
         """
@@ -1070,7 +1333,7 @@ class SettlementProcessor:
         self.df.loc[self.df[SET_URBAN] == 1, SET_NUM_PEOPLE_PER_HH] = num_people_per_hh_urban
 
     def calculate_off_grid_lcoes(self, mg_hydro_calc, mg_wind_calc, mg_pv_calc,
-                                 sa_pv_calc, mg_diesel_calc, sa_diesel_calc):
+                                 sa_pv_calc, mg_diesel_calc, sa_diesel_calc, pv_diesel_hyb, urban_hybrid, rural_hybrid):
         """
         Calcuate the LCOEs for all off-grid technologies, and calculate the minimum, so that the electrification
         algorithm knows where the bar is before it becomes economical to electrify
@@ -1157,15 +1420,31 @@ class SettlementProcessor:
             if row[SET_GHI] > 1000 else 99,
             axis=1)
 
+        logging.info('Calculate PV diesel hybrid LCOE')
+        self.df[SET_LCOE_MG_HYBRID] = self.df.apply(
+            lambda row: pv_diesel_hyb.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
+                                               people=row[SET_POP_FUTURE],
+                                               num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
+                                               travel_hours=row[SET_TRAVEL_HOURS],
+                                               ghi=row[SET_GHI],
+                                               urban=row[SET_URBAN],
+                                               urban_hybrid=urban_hybrid,
+                                               rural_hybrid=rural_hybrid,
+                                               mg_hybrid=True,
+                                               pv=True)
+            if row[SET_GHI] > 1000 else 99,
+            axis=1)
+
         logging.info('Determine minimum technology (no grid)')
         self.df[SET_MIN_OFFGRID] = self.df[[SET_LCOE_SA_DIESEL, SET_LCOE_SA_PV, SET_LCOE_MG_WIND,
-                                            SET_LCOE_MG_DIESEL, SET_LCOE_MG_PV, SET_LCOE_MG_HYDRO]].T.idxmin()
+                                            SET_LCOE_MG_DIESEL, SET_LCOE_MG_PV, SET_LCOE_MG_HYDRO,
+                                            SET_LCOE_MG_HYBRID]].T.idxmin()
 
         logging.info('Determine minimum tech LCOE')
         self.df[SET_MIN_OFFGRID_LCOE] = self.df.apply(lambda row: (row[row[SET_MIN_OFFGRID]]), axis=1)
 
     def results_columns(self, mg_hydro_calc, mg_wind_calc, mg_pv_calc, sa_pv_calc,
-                        mg_diesel_calc, sa_diesel_calc, grid_calc):
+                        mg_diesel_calc, sa_diesel_calc, grid_calc, pv_diesel_hyb, urban_hybrid, rural_hybrid):
         """
         Once the grid extension algorithm has been run, determine the minimum overall option, and calculate the
         capacity and investment requirements for each settlement
@@ -1216,19 +1495,31 @@ class SettlementProcessor:
                                           num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                           additional_mv_line_length=row[SET_MIN_GRID_DIST],
                                           get_investment_cost=True)
+            elif min_tech == SET_LCOE_MG_HYBRID:
+                return pv_diesel_hyb.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
+                                              people=row[SET_POP_FUTURE],
+                                              num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
+                                              travel_hours=row[SET_TRAVEL_HOURS],
+                                              ghi=row[SET_GHI],
+                                              urban=row[SET_URBAN],
+                                              urban_hybrid = urban_hybrid,
+                                              rural_hybrid = rural_hybrid,
+                                              pv=True,
+                                              mg_hybrid=True,
+                                              get_investment_cost=True)
             else:
                 raise ValueError('A technology has not been accounted for in res_investment_cost()')
 
         logging.info('Determine minimum overall')
         self.df[SET_MIN_OVERALL] = self.df[[SET_LCOE_GRID, SET_LCOE_SA_DIESEL, SET_LCOE_SA_PV, SET_LCOE_MG_WIND,
-                                            SET_LCOE_MG_DIESEL, SET_LCOE_MG_PV, SET_LCOE_MG_HYDRO]].T.idxmin()
+                                            SET_LCOE_MG_DIESEL, SET_LCOE_MG_PV, SET_LCOE_MG_HYDRO, SET_LCOE_MG_HYBRID]].T.idxmin()
 
         logging.info('Determine minimum overall LCOE')
         self.df[SET_MIN_OVERALL_LCOE] = self.df.apply(lambda row: (row[row[SET_MIN_OVERALL]]), axis=1)
 
         logging.info('Add technology codes')
         codes = {SET_LCOE_GRID: 1, SET_LCOE_MG_HYDRO: 7, SET_LCOE_MG_WIND: 6, SET_LCOE_MG_PV: 5,
-                 SET_LCOE_MG_DIESEL: 4, SET_LCOE_SA_DIESEL: 2, SET_LCOE_SA_PV: 3}
+                 SET_LCOE_MG_DIESEL: 4, SET_LCOE_SA_DIESEL: 2, SET_LCOE_SA_PV: 3, SET_LCOE_MG_HYBRID: 8}
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_GRID, SET_MIN_OVERALL_CODE] = codes[SET_LCOE_GRID]
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_MG_HYDRO, SET_MIN_OVERALL_CODE] = codes[SET_LCOE_MG_HYDRO]
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_SA_PV, SET_MIN_OVERALL_CODE] = codes[SET_LCOE_SA_PV]
@@ -1236,11 +1527,29 @@ class SettlementProcessor:
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_MG_PV, SET_MIN_OVERALL_CODE] = codes[SET_LCOE_MG_PV]
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_MG_DIESEL, SET_MIN_OVERALL_CODE] = codes[SET_LCOE_MG_DIESEL]
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_SA_DIESEL, SET_MIN_OVERALL_CODE] = codes[SET_LCOE_SA_DIESEL]
+        self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_MG_HYBRID, SET_MIN_OVERALL_CODE] = codes[SET_LCOE_MG_HYBRID]
 
         logging.info('Determine minimum category')
         self.df[SET_MIN_CATEGORY] = self.df[SET_MIN_OVERALL].str.extract('(SA|MG|Grid)', expand=False)
 
         logging.info('Calculate new capacity')
+
+        def hybrid_capacity(row):
+            if row[SET_MIN_OVERALL] == SET_LCOE_MG_HYBRID:
+                return pv_diesel_hyb.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
+                                              people=row[SET_POP_FUTURE],
+                                              num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
+                                              travel_hours=row[SET_TRAVEL_HOURS],
+                                              ghi=row[SET_GHI],
+                                              urban=row[SET_URBAN],
+                                              urban_hybrid=urban_hybrid,
+                                              rural_hybrid=rural_hybrid,
+                                              pv=True,
+                                              mg_hybrid=True,
+                                              get_capacity=True)
+        self.df[SET_NEW_CAPACITY] = self.df.apply(hybrid_capacity, axis=1)
+
+
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_GRID, SET_NEW_CAPACITY] = (
                 (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
                 (HOURS_PER_YEAR * grid_calc.capacity_factor * grid_calc.base_to_peak_load_ratio
@@ -1286,7 +1595,7 @@ class SettlementProcessor:
         logging.info('Calculate summaries')
         rows = []
         techs = [SET_LCOE_GRID, SET_LCOE_SA_DIESEL, SET_LCOE_SA_PV, SET_LCOE_MG_WIND,
-                 SET_LCOE_MG_DIESEL, SET_LCOE_MG_PV, SET_LCOE_MG_HYDRO]
+                 SET_LCOE_MG_DIESEL, SET_LCOE_MG_PV, SET_LCOE_MG_HYDRO, SET_LCOE_MG_HYBRID]
         rows.extend([population_ + t for t in techs])
         rows.extend([new_connections_ + t for t in techs])
         rows.extend([capacity_ + t for t in techs])

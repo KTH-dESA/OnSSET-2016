@@ -194,7 +194,7 @@ elif choice == 2:
                                   distribution_losses=0.05,
                                   connection_cost_per_hh=100,
                                   base_to_peak_load_ratio=0.9,
-                                  capital_cost={100: 2500, 1000: 2500, 10000: 2500},
+                                  capital_cost={100: 3000, 1000: 3000, 10000: 3000},
                                   om_costs=0.02,
                                   tech_life=20,
                                   mg_wind=True)
@@ -211,7 +211,7 @@ elif choice == 2:
         sa_pv_calc = Technology(base_to_peak_load_ratio=0.9,
                                 tech_life=15,
                                 om_costs=0.02,
-                                capital_cost={0.020: 20000, 0.050: 11050, 0.100: 7660, 0.200: 5780, 0.300: 5070},
+                                capital_cost={0.020: 5870, 0.050: 5870, 0.100: 5870, 0.200: 5870, 0.300: 5870},
                                 standalone=True)
 
         mg_diesel_calc = Technology(om_of_td_lines=0.03,

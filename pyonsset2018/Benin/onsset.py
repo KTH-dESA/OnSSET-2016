@@ -31,7 +31,7 @@ SET_POP_FUTURE = 'PopFuture'  # Project future population, same units
 SET_GRID_DIST_CURRENT = 'GridDistCurrent'  # Distance in km from current grid
 SET_GRID_DIST_PLANNED = 'GridDistPlan'  # Distance in km from current and future grid
 SET_ROAD_DIST = 'RoadDist'  # Distance in km from road network
-SET_NIGHT_LIGHTS = 'NightLights'  # Intensity of night time lights (from NASA), range 0 - 63
+SET_NIGHT_LIGHTS = 'VIIRS'  # Intensity of night time lights (from NASA), range 0 - 63
 SET_TRAVEL_HOURS = 'TravelHours'  # Travel time to large city in hours
 SET_GHI = 'GHI'  # Global horizontal irradiance in kWh/m2/day
 SET_WINDVEL = 'WindVel'  # Wind velocity in m/s
@@ -58,6 +58,7 @@ SET_NUM_PEOPLE_PER_HH = 'NumPeoplePerHH'
 SET_ELEC_CURRENT = 'ElecStart'  # If the site is currently electrified (0 or 1)
 SET_ELEC_FUTURE = 'ElecFuture'  # If the site has the potential to be 'easily' electrified in future
 SET_NEW_CONNECTIONS = 'NewConnections'  # Number of new people with electricity connections
+SET_NEW_CONNECTIONS_PROD = 'New_Connections_Prod' # Number of new people with electricity connections plus productive uses corresponding
 SET_MIN_GRID_DIST = 'MinGridDist'
 SET_LCOE_GRID = 'Grid'  # All lcoes in USD/kWh
 SET_LCOE_SA_PV = 'SA_PV'
@@ -618,14 +619,6 @@ class Technology:
                 ref_table = rural_hybrid[0]
                 ref_investments = rural_hybrid[3]
                 ref_capacity = rural_hybrid[1] + rural_hybrid[2]
-            elif urban == 1 and wind:
-                ref_table = urban_hybrid[0]
-                ref_investments = urban_hybrid[3]
-                ref_capacity = urban_hybrid[1] + urban_hybrid[2]
-            elif urban == 0 and wind:
-                ref_table = rural_hybrid[0]
-                ref_investments = rural_hybrid[3]
-                ref_capacity = rural_hybrid[1] + rural_hybrid[2]
 
             add_lcoe = ref_table[renewable_lookup, diesel_lookup]
             add_investments = ref_investments[renewable_lookup, diesel_lookup] * people / num_people_per_hh
@@ -948,6 +941,18 @@ class SettlementProcessor:
         Calibrate the current electrification status, and future 'pre-electrification' status
         """
 
+        urban_pop = (self.df.loc[self.df[SET_URBAN] == 1, SET_POP_CALIB].sum())  # Calibrate current electrification
+        rural_pop = (self.df.loc[self.df[SET_URBAN] == 0, SET_POP_CALIB].sum())  # Calibrate current electrification
+        total_pop = self.df[SET_POP_CALIB].sum()
+        total_elec_ratio = elec_actual
+        urban_elec_ratio = 0.708
+        rural_elec_ratio = 0.180
+        factor = (total_pop * total_elec_ratio) / (urban_pop * urban_elec_ratio + rural_pop * rural_elec_ratio)
+        urban_elec_ratio *= factor
+        rural_elec_ratio *= factor
+        print('factor: ' + str(factor))
+        self.df[SET_ELEC_CURRENT] = 0
+
         # Calibrate current electrification
         logging.info('Calibrate current electrification')
         print('1. Actual electrification rate in 2015 = {}'.format(elec_actual))
@@ -960,93 +965,109 @@ class SettlementProcessor:
         max_iterations_one = 30
         max_iterations_two = 60
 
-        while True:
-            # Assign the 1 (electrified)/0 (un-electrified) values to each cell
-            self.df[SET_ELEC_CURRENT] = self.df.apply(lambda row:
-                                                      1
-                                                      if (row[SET_CURRENT_ELEC_DIST] < 5) and
-                                                          (row[SET_POP_CALIB] > pop_cutoff or
-                                                          #row[SET_GRID_DIST_CURRENT] < max_grid_dist or
-                                                           row[SET_NIGHT_LIGHTS] > min_night_lights)
-                                                      #or (row[SET_POP_CALIB] > pop_cutoff2 and
-                                                      #    (row[SET_GRID_DIST_CURRENT] < grid_cutoff2 or
-                                                      #     row[SET_ROAD_DIST] < road_cutoff2))
-                                                      else 0,
-                                                      axis=1)
+        urban_electrified = urban_pop * urban_elec_ratio
+        rural_electrified = rural_pop * rural_elec_ratio
+        self.df.loc[(self.df[SET_GRID_DIST_CURRENT] < 50) & (self.df[SET_NIGHT_LIGHTS] > 0) & (
+                self.df[SET_POP_CALIB] > 50), SET_ELEC_CURRENT] = 1
+        urban_elec_ratio = urban_electrified / (self.df.loc[(self.df[SET_ELEC_CURRENT] == 1) & (
+                self.df[SET_URBAN] == 1), SET_POP_CALIB].sum())
+        rural_elec_ratio = rural_electrified /(self.df.loc[(self.df[SET_ELEC_CURRENT] == 1) & (
+                self.df[SET_URBAN] == 0), SET_POP_CALIB].sum())
+        pop_elec = self.df.loc[self.df[SET_ELEC_CURRENT] == 1, SET_POP_CALIB].sum()
+        elec_modelled = pop_elec / pop_tot
 
-            # Get the calculated electrified ratio, and limit it to within reasonable boundaries
-            pop_elec = self.df.loc[self.df[SET_ELEC_CURRENT] == 1, SET_POP_CALIB].sum()
-            elec_modelled = pop_elec / pop_tot
+        logging.info('The modelled electrification rate achieved is {}. '
+                     'If this is not acceptable please revise this part of the algorithm'.format(elec_modelled))
 
-            if elec_modelled == 0:
-                elec_modelled = 0.01
-            elif elec_modelled == 1:
-                elec_modelled = 0.99
-
-            if abs(elec_modelled - elec_actual) < accuracy:
-                print('2. Modelled electrification rate = {}'.format(elec_modelled))
-                break
-            elif not is_round_two:
-                min_night_lights = sorted([10, min_night_lights - min_night_lights * 2 *
-                                           (elec_actual - elec_modelled) / elec_actual, 60])[1]
-                max_grid_dist = sorted([5, max_grid_dist + max_grid_dist * 2 *
-                                        (elec_actual - elec_modelled) / elec_actual, 150])[1]
-                max_road_dist = sorted([0.5, max_road_dist + max_road_dist * 2 *
-                                        (elec_actual - elec_modelled) / elec_actual, 50])[1]
-            elif elec_modelled - elec_actual < 0:
-                pop_cutoff2 = sorted([0.01, pop_cutoff2 - pop_cutoff2 *
-                                      (elec_actual - elec_modelled) / elec_actual, 100000])[1]
-            elif elec_modelled - elec_actual > 0:
-                pop_cutoff = sorted([0.01, pop_cutoff - pop_cutoff * 0.5 *
-                                     (elec_actual - elec_modelled) / elec_actual, 10000])[1]
-
-            constraints = '{}{}{}{}{}'.format(pop_cutoff, min_night_lights, max_grid_dist, max_road_dist, pop_cutoff2)
-            if constraints in prev_vals and not is_round_two:
-                logging.info('Repeating myself, on to round two')
-                prev_vals = []
-                is_round_two = True
-            elif constraints in prev_vals and is_round_two:
-                logging.info('NOT SATISFIED: repeating myself')
-                print('2. Modelled electrification rate = {}'.format(elec_modelled))
-                if 'y' in input('Do you want to rerun calibration with new input values? <y/n>'):
-                    count = 0
-                    is_round_two = False
-                    pop_cutoff = int(input('Enter value for pop_cutoff: '))
-                    min_night_lights = int(input('Enter value for min_night_lights: '))
-                    max_grid_dist = int(input('Enter value for max_grid_dist: '))
-                    max_road_dist = int(input('Enter value for max_road_dist: '))
-                    pop_cutoff2 = int(input('Enter value for pop_cutoff2: '))
-                else:
-                    break
-            else:
-                prev_vals.append(constraints)
-
-            if count >= max_iterations_one and not is_round_two:
-                logging.info('Got to {}, on to round two'.format(max_iterations_one))
-                is_round_two = True
-            elif count >= max_iterations_two and is_round_two:
-                logging.info('NOT SATISFIED: Got to {}'.format(max_iterations_two))
-                print('2. Modelled electrification rate = {}'.format(elec_modelled))
-                if 'y' in input('Do you want to rerun calibration with new input values? <y/n>'):
-                    count = 0
-                    is_round_two = False
-                    pop_cutoff = int(input('Enter value for pop_cutoff: '))
-                    min_night_lights = int(input('Enter value for min_night_lights: '))
-                    max_grid_dist = int(input('Enter value for max_grid_dist: '))
-                    max_road_dist = int(input('Enter value for max_road_dist: '))
-                    pop_cutoff2 = int(input('Enter value for pop_cutoff2: '))
-                else:
-                    break
-
-            count += 1
-
+        # while True:
+        #     # Assign the 1 (electrified)/0 (un-electrified) values to each cell
+        #     self.df[SET_ELEC_CURRENT] = self.df.apply(lambda row:
+        #                                               1
+        #                                               if (row[SET_CURRENT_ELEC_DIST] < 5) and
+        #                                                   (row[SET_POP_CALIB] > pop_cutoff or
+        #                                                   #row[SET_GRID_DIST_CURRENT] < max_grid_dist or
+        #                                                    row[SET_NIGHT_LIGHTS] > min_night_lights)
+        #                                               #or (row[SET_POP_CALIB] > pop_cutoff2 and
+        #                                               #    (row[SET_GRID_DIST_CURRENT] < grid_cutoff2 or
+        #                                               #     row[SET_ROAD_DIST] < road_cutoff2))
+        #                                               else 0,
+        #                                               axis=1)
+        #
+        #     # Get the calculated electrified ratio, and limit it to within reasonable boundaries
+        #     pop_elec = self.df.loc[self.df[SET_ELEC_CURRENT] == 1, SET_POP_CALIB].sum()
+        #     elec_modelled = pop_elec / pop_tot
+        #
+        #     if elec_modelled == 0:
+        #         elec_modelled = 0.01
+        #     elif elec_modelled == 1:
+        #         elec_modelled = 0.99
+        #
+        #     if abs(elec_modelled - elec_actual) < accuracy:
+        #         print('2. Modelled electrification rate = {}'.format(elec_modelled))
+        #         break
+        #     elif not is_round_two:
+        #         min_night_lights = sorted([10, min_night_lights - min_night_lights * 2 *
+        #                                    (elec_actual - elec_modelled) / elec_actual, 60])[1]
+        #         max_grid_dist = sorted([5, max_grid_dist + max_grid_dist * 2 *
+        #                                 (elec_actual - elec_modelled) / elec_actual, 150])[1]
+        #         max_road_dist = sorted([0.5, max_road_dist + max_road_dist * 2 *
+        #                                 (elec_actual - elec_modelled) / elec_actual, 50])[1]
+        #     elif elec_modelled - elec_actual < 0:
+        #         pop_cutoff2 = sorted([0.01, pop_cutoff2 - pop_cutoff2 *
+        #                               (elec_actual - elec_modelled) / elec_actual, 100000])[1]
+        #     elif elec_modelled - elec_actual > 0:
+        #         pop_cutoff = sorted([0.01, pop_cutoff - pop_cutoff * 0.5 *
+        #                              (elec_actual - elec_modelled) / elec_actual, 10000])[1]
+        #
+        #     constraints = '{}{}{}{}{}'.format(pop_cutoff, min_night_lights, max_grid_dist, max_road_dist, pop_cutoff2)
+        #     if constraints in prev_vals and not is_round_two:
+        #         logging.info('Repeating myself, on to round two')
+        #         prev_vals = []
+        #         is_round_two = True
+        #     elif constraints in prev_vals and is_round_two:
+        #         logging.info('NOT SATISFIED: repeating myself')
+        #         print('2. Modelled electrification rate = {}'.format(elec_modelled))
+        #         if 'y' in input('Do you want to rerun calibration with new input values? <y/n>'):
+        #             count = 0
+        #             is_round_two = False
+        #             pop_cutoff = int(input('Enter value for pop_cutoff: '))
+        #             min_night_lights = int(input('Enter value for min_night_lights: '))
+        #             max_grid_dist = int(input('Enter value for max_grid_dist: '))
+        #             max_road_dist = int(input('Enter value for max_road_dist: '))
+        #             pop_cutoff2 = int(input('Enter value for pop_cutoff2: '))
+        #         else:
+        #             break
+        #     else:
+        #         prev_vals.append(constraints)
+        #
+        #     if count >= max_iterations_one and not is_round_two:
+        #         logging.info('Got to {}, on to round two'.format(max_iterations_one))
+        #         is_round_two = True
+        #     elif count >= max_iterations_two and is_round_two:
+        #         logging.info('NOT SATISFIED: Got to {}'.format(max_iterations_two))
+        #         print('2. Modelled electrification rate = {}'.format(elec_modelled))
+        #         if 'y' in input('Do you want to rerun calibration with new input values? <y/n>'):
+        #             count = 0
+        #             is_round_two = False
+        #             pop_cutoff = int(input('Enter value for pop_cutoff: '))
+        #             min_night_lights = int(input('Enter value for min_night_lights: '))
+        #             max_grid_dist = int(input('Enter value for max_grid_dist: '))
+        #             max_road_dist = int(input('Enter value for max_road_dist: '))
+        #             pop_cutoff2 = int(input('Enter value for pop_cutoff2: '))
+        #         else:
+        #             break
+        #
+        #     count += 1
+        #
         logging.info('Calculate new connections')
-        self.df.loc[self.df[SET_ELEC_CURRENT] == 1, SET_NEW_CONNECTIONS] =\
-            self.df[SET_POP_FUTURE] - self.df[SET_POP_CALIB]
+        self.df.loc[(self.df[SET_ELEC_CURRENT] == 1) & (self.df[SET_URBAN] == 1), SET_NEW_CONNECTIONS] =\
+            self.df[SET_POP_FUTURE] - urban_elec_ratio * self.df[SET_POP_CALIB]
+        self.df.loc[(self.df[SET_ELEC_CURRENT] == 1) & (self.df[SET_URBAN] == 0), SET_NEW_CONNECTIONS] = \
+            self.df[SET_POP_FUTURE] - rural_elec_ratio * self.df[SET_POP_CALIB]
         self.df.loc[self.df[SET_ELEC_CURRENT] == 0, SET_NEW_CONNECTIONS] = self.df[SET_POP_FUTURE]
         self.df.loc[self.df[SET_NEW_CONNECTIONS] < 0, SET_NEW_CONNECTIONS] = 0
 
-        return min_night_lights, max_grid_dist, max_road_dist, elec_modelled, pop_cutoff, pop_cutoff2
+        return min_night_lights, max_grid_dist, max_road_dist, elec_modelled, pop_cutoff, pop_cutoff2, urban_elec_ratio, rural_elec_ratio
 
     @staticmethod
     def separate_elec_status(elec_status):
@@ -1112,14 +1133,15 @@ class SettlementProcessor:
 
         df_neargrid = self.df.loc[self.df[SET_GRID_DIST_PLANNED] < pre_elec_dist]
 
-        pop = df_neargrid[SET_POP_FUTURE].tolist()
+        pop = df_neargrid[SET_NEW_CONNECTIONS_PROD].tolist()
+        # pop = df_neargrid[SET_POP_FUTURE].tolist()
         urban = df_neargrid[SET_URBAN].tolist()
         grid_penalty_ratio = df_neargrid[SET_GRID_PENALTY].tolist()
         status = df_neargrid[SET_ELEC_CURRENT].tolist()
         min_tech_lcoes = df_neargrid[SET_MIN_OFFGRID_LCOE].tolist()
         dist_planned = df_neargrid[SET_GRID_DIST_PLANNED].tolist()
         demand = df_neargrid[SET_ENERGY_PER_HH].tolist()
-        new_conn = df_neargrid[SET_NEW_CONNECTIONS].tolist()
+        new_conn = df_neargrid[SET_NEW_CONNECTIONS_PROD].tolist()
         num_ppphh = df_neargrid[SET_NUM_PEOPLE_PER_HH].tolist()
 
         electrified, unelectrified = self.separate_elec_status(status)
@@ -1165,7 +1187,8 @@ class SettlementProcessor:
         # grid_capacity_limit = 400000  # kW during model period
         x = (self.df[SET_X]/coordinate_units).tolist()
         y = (self.df[SET_Y]/coordinate_units).tolist()
-        pop = self.df[SET_POP_FUTURE].tolist()
+        pop = self.df[SET_NEW_CONNECTIONS_PROD].tolist()
+        # pop = self.df[SET_POP_FUTURE].tolist()
         old_pop = self.df[SET_POP_CALIB].tolist()
         urban = self.df[SET_URBAN].tolist()
         grid_penalty_ratio = self.df[SET_GRID_PENALTY].tolist()
@@ -1174,7 +1197,8 @@ class SettlementProcessor:
         new_lcoes = self.df[SET_LCOE_GRID].tolist()
         num_ppphh = self.df[SET_NUM_PEOPLE_PER_HH].tolist()
         demand = self.df[SET_ENERGY_PER_HH].tolist()
-        new_conn = self.df[SET_NEW_CONNECTIONS].tolist()
+        new_conn = self.df[SET_NEW_CONNECTIONS_PROD].tolist()
+        #new_conn = self.df[SET_NEW_CONNECTIONS].tolist()
 
         cell_path_real = list(np.zeros(len(status)).tolist())
         cell_path_adjusted = list(np.zeros(len(status)).tolist())
@@ -1350,7 +1374,7 @@ class SettlementProcessor:
         def hydro_lcoe(row):
             if row[SET_HYDRO_DIST] < max_hydro_dist:
                 # calculate the capacity that would be added by the settlement
-                additional_capacity = ((row[SET_NEW_CONNECTIONS] * row[SET_ENERGY_PER_HH] / row[SET_NUM_PEOPLE_PER_HH])
+                additional_capacity = ((row[SET_NEW_CONNECTIONS_PROD] * row[SET_ENERGY_PER_HH] / row[SET_NUM_PEOPLE_PER_HH])
                                        / (HOURS_PER_YEAR * mg_hydro_calc.capacity_factor *
                                           mg_hydro_calc.base_to_peak_load_ratio))
 
@@ -1363,7 +1387,7 @@ class SettlementProcessor:
 
                 else:
                     return mg_hydro_calc.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                                  people=row[SET_POP_FUTURE],
+                                                  people=row[SET_NEW_CONNECTIONS_PROD],
                                                   num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                                   mv_line_length=row[SET_HYDRO_DIST])
             else:
@@ -1378,7 +1402,7 @@ class SettlementProcessor:
         logging.info('Calculate minigrid PV LCOE')
         self.df[SET_LCOE_MG_PV] = self.df.apply(
             lambda row: mg_pv_calc.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                            people=row[SET_POP_FUTURE],
+                                            people=row[SET_NEW_CONNECTIONS_PROD],
                                             num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                             capacity_factor=row[SET_GHI] / HOURS_PER_YEAR)
             if (row[SET_SOLAR_RESTRICTION] == 1 and row[SET_GHI] > 1000) else 99,
@@ -1387,7 +1411,7 @@ class SettlementProcessor:
         logging.info('Calculate minigrid wind LCOE')
         self.df[SET_LCOE_MG_WIND] = self.df.apply(
             lambda row: mg_wind_calc.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                              people=row[SET_POP_FUTURE],
+                                              people=row[SET_NEW_CONNECTIONS_PROD],
                                               num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                               capacity_factor=row[SET_WINDCF])
             if row[SET_WINDCF] > 0.1 else 99,
@@ -1397,7 +1421,7 @@ class SettlementProcessor:
         self.df[SET_LCOE_MG_DIESEL] = self.df.apply(
             lambda row:
             mg_diesel_calc.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                    people=row[SET_POP_FUTURE],
+                                    people=row[SET_NEW_CONNECTIONS_PROD],
                                     num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                     travel_hours=row[SET_TRAVEL_HOURS]),
             axis=1)
@@ -1406,7 +1430,7 @@ class SettlementProcessor:
         self.df[SET_LCOE_SA_DIESEL] = self.df.apply(
             lambda row:
             sa_diesel_calc.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                    people=row[SET_POP_FUTURE],
+                                    people=row[SET_NEW_CONNECTIONS_PROD],
                                     num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                     travel_hours=row[SET_TRAVEL_HOURS]),
             axis=1)
@@ -1414,7 +1438,7 @@ class SettlementProcessor:
         logging.info('Calculate standalone PV LCOE')
         self.df[SET_LCOE_SA_PV] = self.df.apply(
             lambda row: sa_pv_calc.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                            people=row[SET_POP_FUTURE],
+                                            people=row[SET_NEW_CONNECTIONS_PROD],
                                             num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                             capacity_factor=row[SET_GHI] / HOURS_PER_YEAR)
             if row[SET_GHI] > 1000 else 99,
@@ -1423,7 +1447,7 @@ class SettlementProcessor:
         logging.info('Calculate PV diesel hybrid LCOE')
         self.df[SET_LCOE_MG_HYBRID] = self.df.apply(
             lambda row: pv_diesel_hyb.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                               people=row[SET_POP_FUTURE],
+                                               people=row[SET_NEW_CONNECTIONS_PROD],
                                                num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                                travel_hours=row[SET_TRAVEL_HOURS],
                                                ghi=row[SET_GHI],
@@ -1432,7 +1456,7 @@ class SettlementProcessor:
                                                rural_hybrid=rural_hybrid,
                                                mg_hybrid=True,
                                                pv=True)
-            if row[SET_GHI] > 1000 else 99,
+            if row[SET_GHI] > 9999 else 99,
             axis=1)
 
         logging.info('Determine minimum technology (no grid)')
@@ -1454,50 +1478,50 @@ class SettlementProcessor:
             min_tech = row[SET_MIN_OVERALL]
             if min_tech == SET_LCOE_SA_DIESEL:
                 return sa_diesel_calc.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                               people=row[SET_POP_FUTURE],
+                                               people=row[SET_NEW_CONNECTIONS_PROD],
                                                num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                                travel_hours=row[SET_TRAVEL_HOURS],
                                                get_investment_cost=True)
             elif min_tech == SET_LCOE_SA_PV:
                 return sa_pv_calc.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                           people=row[SET_POP_FUTURE],
+                                           people=row[SET_NEW_CONNECTIONS_PROD],
                                            num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                            capacity_factor=row[SET_GHI] / HOURS_PER_YEAR,
                                            get_investment_cost=True)
             elif min_tech == SET_LCOE_MG_WIND:
                 return mg_wind_calc.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                             people=row[SET_POP_FUTURE],
+                                             people=row[SET_NEW_CONNECTIONS_PROD],
                                              num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                              capacity_factor=row[SET_WINDCF],
                                              get_investment_cost=True)
             elif min_tech == SET_LCOE_MG_DIESEL:
                 return mg_diesel_calc.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                               people=row[SET_POP_FUTURE],
+                                               people=row[SET_NEW_CONNECTIONS_PROD],
                                                num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                                travel_hours=row[SET_TRAVEL_HOURS],
                                                get_investment_cost=True)
             elif min_tech == SET_LCOE_MG_PV:
                 return mg_pv_calc.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                           people=row[SET_POP_FUTURE],
+                                           people=row[SET_NEW_CONNECTIONS_PROD],
                                            num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                            capacity_factor=row[SET_GHI] / HOURS_PER_YEAR,
                                            get_investment_cost=True)
             elif min_tech == SET_LCOE_MG_HYDRO:
                 return mg_hydro_calc.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                              people=row[SET_POP_FUTURE],
+                                              people=row[SET_NEW_CONNECTIONS_PROD],
                                               num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
 
                                               mv_line_length=row[SET_HYDRO_DIST],
                                               get_investment_cost=True)
             elif min_tech == SET_LCOE_GRID:
                 return grid_calc.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                          people=row[SET_POP_FUTURE],
+                                          people=row[SET_NEW_CONNECTIONS_PROD],
                                           num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                           additional_mv_line_length=row[SET_MIN_GRID_DIST],
                                           get_investment_cost=True)
             elif min_tech == SET_LCOE_MG_HYBRID:
                 return pv_diesel_hyb.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                              people=row[SET_POP_FUTURE],
+                                              people=row[SET_NEW_CONNECTIONS_PROD],
                                               num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                               travel_hours=row[SET_TRAVEL_HOURS],
                                               ghi=row[SET_GHI],
@@ -1537,7 +1561,7 @@ class SettlementProcessor:
         def hybrid_capacity(row):
             if row[SET_MIN_OVERALL] == SET_LCOE_MG_HYBRID:
                 return pv_diesel_hyb.get_lcoe(energy_per_hh=row[SET_ENERGY_PER_HH],
-                                              people=row[SET_POP_FUTURE],
+                                              people=row[SET_NEW_CONNECTIONS_PROD],
                                               num_people_per_hh=row[SET_NUM_PEOPLE_PER_HH],
                                               travel_hours=row[SET_TRAVEL_HOURS],
                                               ghi=row[SET_GHI],
@@ -1551,31 +1575,31 @@ class SettlementProcessor:
 
 
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_GRID, SET_NEW_CAPACITY] = (
-                (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
+                (self.df[SET_NEW_CONNECTIONS_PROD] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
                 (HOURS_PER_YEAR * grid_calc.capacity_factor * grid_calc.base_to_peak_load_ratio
                  * (1 - grid_calc.distribution_losses)))
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_MG_HYDRO, SET_NEW_CAPACITY] = (
-                (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
+                (self.df[SET_NEW_CONNECTIONS_PROD] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
                 (HOURS_PER_YEAR * mg_hydro_calc.capacity_factor * mg_hydro_calc.base_to_peak_load_ratio
                  * (1 - mg_hydro_calc.distribution_losses)))
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_MG_PV, SET_NEW_CAPACITY] = (
-                (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
+                (self.df[SET_NEW_CONNECTIONS_PROD] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
                 (HOURS_PER_YEAR * (self.df[SET_GHI] / HOURS_PER_YEAR) * mg_pv_calc.base_to_peak_load_ratio
                  * (1 - mg_pv_calc.distribution_losses)))
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_MG_WIND, SET_NEW_CAPACITY] = (
-                (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
+                (self.df[SET_NEW_CONNECTIONS_PROD] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
                 (HOURS_PER_YEAR * self.df[SET_WINDCF] * mg_wind_calc.base_to_peak_load_ratio
                  * (1 - mg_wind_calc.distribution_losses)))
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_MG_DIESEL, SET_NEW_CAPACITY] = (
-                (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
+                (self.df[SET_NEW_CONNECTIONS_PROD] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
                 (HOURS_PER_YEAR * mg_diesel_calc.capacity_factor * mg_diesel_calc.base_to_peak_load_ratio
                  * (1 - mg_diesel_calc.distribution_losses)))
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_SA_DIESEL, SET_NEW_CAPACITY] = (
-                (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
+                (self.df[SET_NEW_CONNECTIONS_PROD] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
                 (HOURS_PER_YEAR * sa_diesel_calc.capacity_factor * sa_diesel_calc.base_to_peak_load_ratio
                  * (1 - sa_diesel_calc.distribution_losses)))
         self.df.loc[self.df[SET_MIN_OVERALL] == SET_LCOE_SA_PV, SET_NEW_CAPACITY] = (
-                (self.df[SET_NEW_CONNECTIONS] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
+                (self.df[SET_NEW_CONNECTIONS_PROD] * self.df[SET_ENERGY_PER_HH] / self.df[SET_NUM_PEOPLE_PER_HH]) /
                 (HOURS_PER_YEAR * (self.df[SET_GHI] / HOURS_PER_YEAR) * sa_pv_calc.base_to_peak_load_ratio
                  * (1 - sa_pv_calc.distribution_losses)))
 
@@ -1609,3 +1633,82 @@ class SettlementProcessor:
             summary.loc[investments_ + t] = self.df.loc[self.df[SET_MIN_OVERALL] == t, SET_INVESTMENT_COST].sum()
 
         return summary
+
+    def get_health_demand(self, people, tier):
+        if people >= 0:  # Set this number to 999999 to "shut off" health demand
+            wb_tiers_health = {1: 10, 2: 20, 3: 30, 4: 40, 5: 50}
+
+            hct1 = 0.25  # Elec. demand per bed (kWh/day) check corresponding excel file
+            hct2 = 0.17  # Elec. demand per bed (kWh/day) check corresponding excel file
+            hct3 = 0.12  # Elec. demand per bed (kWh/day) check corresponding excel file
+            hct4 = 26.97  # Elec. demand per bed (kWh/day) check corresponding excel file
+
+            # Hamlet: settlement with population below 50 ppl per sq.km\n
+            # Village: settlement with population between 51 and 880 per sq.km
+            # Town: settlememtn with population between 881 and 2000 per sq.km
+            # City: settlement with population above 2000 ppl per sq.km
+
+            if people <= 50:
+                healthdemand = people * hct1 * (wb_tiers_health[tier] / 10000) * 365  # kWh/person/year
+            elif 50 < people <= 880:
+                healthdemand = people * hct2 * (wb_tiers_health[tier] / 10000) * 365  # kWh/person/year
+            elif 880 < people <= 2000:
+                healthdemand = people * hct3 * (wb_tiers_health[tier] / 10000) * 365  # kWh/person/year
+            else:
+                healthdemand = people * hct4 * (wb_tiers_health[tier] / 10000) * 365  # kWh/person/year
+
+            return healthdemand
+        else:
+            return 0
+
+    def get_education_demand(self, people, tier, Primpop15=0.132, Seconpop15=0.164, studinclass=40, sizeofclass=50):
+        if people >= 0:   # Set this number to 999999 to "shut off" education demand
+            wb_tiers_education = {1: 1.05, 2: 3.15, 3: 6.3, 4: 9.45, 5: 12.6}
+            studentratio = (Primpop15 + Seconpop15)
+            studentpop = studentratio * people
+
+            # Settlement categorization
+            # Hamlet: settlement with population below 50 ppl per sq.km\n
+            # Village: settlement with population between 51 and 880 per sq.km
+            # Town: settlement with population between 881 and 2000 per sq.km
+            # City: settlement with population above 2000 ppl per sq.km
+
+            schoolsize = studentpop * (sizeofclass/studinclass+1.5)
+            schoolelec = schoolsize * wb_tiers_education[tier]
+
+            return schoolelec
+        else:
+            return 0
+
+    def calc_education_demand(self, wb_tier_urban, wb_tier_rural):
+        def education_demand(row):
+            if row[SET_URBAN] == 1:  #  and row[SET_POP_FUTURE] >= 20:
+                return self.get_education_demand(people=row[SET_POP_FUTURE],
+                                                              tier=wb_tier_urban)
+            else:
+                #  elif row[SET_POP_FUTURE] >= 20:
+                return self.get_education_demand(people=row[SET_POP_FUTURE],
+                                                              tier=wb_tier_rural)
+
+
+        self.df['EducationDemand'] = self.df.apply(education_demand, axis=1)
+        self.df['EducationDemand'] = 0
+
+    def calc_health_demand(self, wb_tier_urban, wb_tier_rural):
+        def health_demand(row):
+            if row[SET_URBAN] == 1:  # and row[SET_POP_FUTURE] >= 20:
+                return self.get_health_demand(people=row[SET_POP_FUTURE],
+                                                        tier=wb_tier_urban)
+            else:
+                #  elif row[SET_POP_FUTURE] >= 20:
+                return self.get_health_demand(people=row[SET_POP_FUTURE],
+                                                        tier=wb_tier_rural)
+
+
+        self.df['HealthDemand'] = self.df.apply(health_demand, axis=1)
+        self.df['HealthDemand'] = 0
+
+    def new_connections_prod(self, energy_per_hh_rural, energy_per_hh_urban,
+                               num_people_per_hh_rural, num_people_per_hh_urban):
+        self.df.loc[self.df[SET_URBAN] == 1, SET_NEW_CONNECTIONS_PROD] = self.df[SET_NEW_CONNECTIONS] + (self.df['HealthDemand'] + self.df['EducationDemand'])/(energy_per_hh_urban/num_people_per_hh_urban)
+        self.df.loc[self.df[SET_URBAN] == 0, SET_NEW_CONNECTIONS_PROD] = self.df[SET_NEW_CONNECTIONS] + (self.df['HealthDemand'] + self.df['EducationDemand']) / (energy_per_hh_rural / num_people_per_hh_rural)

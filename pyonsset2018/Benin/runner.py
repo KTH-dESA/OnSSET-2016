@@ -85,9 +85,12 @@ elif choice == 1:
 
         urban_cutoff, urban_modelled = onsseter.calibrate_pop_and_urban(pop_actual, pop_future, urban_current,
                                                                         urban_future, urban_cutoff)
-        min_night_lights, max_grid_dist, max_road_dist, elec_modelled, pop_cutoff, pop_cutoff2 = \
+        min_night_lights, max_grid_dist, max_road_dist, elec_modelled, pop_cutoff, pop_cutoff2, urban_elec_ratio, rural_elec_ratio = \
             onsseter.elec_current_and_future(elec_actual, pop_cutoff, min_night_lights,
                                              max_grid_dist, max_road_dist, pop_tot, pop_cutoff2)
+
+        print(urban_elec_ratio)
+        print(rural_elec_ratio)
 
         specs.loc[country, SPE_MIN_NIGHT_LIGHTS] = min_night_lights
         specs.loc[country, SPE_MAX_GRID_DIST] = max_grid_dist
@@ -115,6 +118,7 @@ elif choice == 2:
           5: {} kWh/person/year""".format(wb_tiers_all[1], wb_tiers_all[2], wb_tiers_all[3],
                                           wb_tiers_all[4], wb_tiers_all[5]))
     wb_tier_urban = int(input('Enter the tier number for urban: '))
+    wb_tier_peri_urban = int(input('Enter the tier number for urban: '))
     wb_tier_rural = int(input('Enter the tier number for rural: '))
 
     diesel_high = True if 'y' in input('Use high diesel value? <y/n> ') else False
@@ -162,6 +166,10 @@ elif choice == 2:
                                       mv_line_max_length=50,
                                       hv_lv_transformer_cost=5000,
                                       mv_increase_rate=0.1)
+
+        onsseter.calc_education_demand(wb_tier_urban, wb_tier_rural)
+        onsseter.calc_health_demand(wb_tier_urban, wb_tier_rural)
+        onsseter.new_connections_prod(energy_per_hh_rural, energy_per_hh_urban, num_people_per_hh_rural, num_people_per_hh_urban)
 
         grid_calc = Technology(om_of_td_lines=0.03,
                                distribution_losses=float(specs[SPE_GRID_LOSSES][country]),

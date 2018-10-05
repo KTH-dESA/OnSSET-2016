@@ -1123,7 +1123,7 @@ class SettlementProcessor:
 
         return unelec_list
 
-    def pre_elec(self, grid_lcoes_rural, grid_lcoes_urban, pre_elec_dist, grid_calc, grid_capacity_limit):
+    def pre_elec(self, grid_lcoes_rural, grid_lcoes_urban, grid_lcoes_peri_urban, pre_elec_dist, grid_calc, grid_capacity_limit):
         """
         Determine which settlements are economically close to existing or planned grid lines, and should be
         considered electrified in the electrification algorithm
@@ -1166,6 +1166,8 @@ class SettlementProcessor:
 
             if urban[unelec]:
                 grid_lcoe = grid_lcoes_urban[pop_index][int(grid_penalty_ratio[unelec] * dist_planned[unelec])]
+            elif pop[unelec] > 300:
+                grid_lcoe = grid_lcoes_peri_urban[pop_index][int(grid_penalty_ratio[unelec] * dist_planned[unelec])]
             else:
                 grid_lcoe = grid_lcoes_rural[pop_index][int(grid_penalty_ratio[unelec] * dist_planned[unelec])]
 
@@ -1178,7 +1180,7 @@ class SettlementProcessor:
 
         return status
 
-    def elec_extension(self, grid_lcoes_rural, grid_lcoes_urban, existing_grid_cost_ratio, max_dist, coordinate_units, grid_calc, grid_capacity_limit):
+    def elec_extension(self, grid_lcoes_rural, grid_lcoes_urban, grid_lcoes_peri_urban, existing_grid_cost_ratio, max_dist, coordinate_units, grid_calc, grid_capacity_limit):
         """
         Iterate through all electrified settlements and find which settlements can be economically connected to the grid
         Repeat with newly electrified settlements until no more are added
@@ -1239,6 +1241,8 @@ class SettlementProcessor:
 
             if urban[unelec]:
                 grid_lcoe = grid_lcoes_urban[pop_index][1]
+            elif pop[unelec] > 300:
+                grid_lcoe = grid_lcoes_peri_urban[pop_index][1]
             else:
                 grid_lcoe = grid_lcoes_rural[pop_index][1]
             if grid_lcoe <= min_tech_lcoes[unelec]:
@@ -1299,6 +1303,8 @@ class SettlementProcessor:
 
                         if urban[unelec]:
                             grid_lcoe = grid_lcoes_urban[pop_index][int(dist_adjusted)]
+                        elif pop[unelec] > 300:
+                            grid_lcoe = grid_lcoes_peri_urban[pop_index][int(dist_adjusted)]
                         else:
                             grid_lcoe = grid_lcoes_rural[pop_index][int(dist_adjusted)]
 
@@ -1317,7 +1323,7 @@ class SettlementProcessor:
 
         return new_lcoes, cell_path_adjusted
 
-    def run_elec(self, grid_lcoes_rural, grid_lcoes_urban, grid_price,
+    def run_elec(self, grid_lcoes_rural, grid_lcoes_urban, grid_lcoes_peri_urban, grid_price,
                  existing_grid_cost_ratio, max_dist, coordinate_units, grid_calc):
         """
         Runs the pre-elec and grid extension algorithms
@@ -1330,6 +1336,7 @@ class SettlementProcessor:
         pre_elec_dist = 10  # The maximum distance from the grid in km to pre-electrifiy settlements
         self.df.loc[self.df[SET_GRID_DIST_PLANNED] < pre_elec_dist, SET_ELEC_FUTURE] = self.pre_elec(grid_lcoes_rural,
                                                                                                      grid_lcoes_urban,
+                                                                                                     grid_lcoes_peri_urban,
                                                                                                      pre_elec_dist,
                                                                                                      grid_calc,
                                                                                                      grid_capacity_limit)
@@ -1338,11 +1345,12 @@ class SettlementProcessor:
         self.df[SET_LCOE_GRID] = self.df.apply(lambda row: grid_price if row[SET_ELEC_FUTURE] == 1 else 99, axis=1)
 
         self.df[SET_LCOE_GRID], self.df[SET_MIN_GRID_DIST] = self.elec_extension(grid_lcoes_rural, grid_lcoes_urban,
+                                                                                 grid_lcoes_peri_urban,
                                                                                  existing_grid_cost_ratio,
                                                                                  max_dist, coordinate_units, grid_calc,
                                                                                  grid_capacity_limit)
 
-    def set_scenario_variables(self, energy_per_hh_rural, energy_per_hh_urban,
+    def set_scenario_variables(self, energy_per_hh_rural, energy_per_hh_urban, energy_per_hh_periurban,
                                num_people_per_hh_rural, num_people_per_hh_urban):
         """
         Set the basic scenario parameters that differ based on urban/rural
@@ -1350,7 +1358,8 @@ class SettlementProcessor:
         """
 
         logging.info('Setting electrification targets')
-        self.df.loc[self.df[SET_URBAN] == 0, SET_ENERGY_PER_HH] = energy_per_hh_rural
+        self.df.loc[(self.df[SET_URBAN] == 0) & (self.df[SET_POP_CALIB] > 300), SET_ENERGY_PER_HH] = energy_per_hh_periurban
+        self.df.loc[(self.df[SET_URBAN] == 0) & (self.df[SET_POP_CALIB] <= 300), SET_ENERGY_PER_HH] = energy_per_hh_rural
         self.df.loc[self.df[SET_URBAN] == 1, SET_ENERGY_PER_HH] = energy_per_hh_urban
 
         self.df.loc[self.df[SET_URBAN] == 0, SET_NUM_PEOPLE_PER_HH] = num_people_per_hh_rural
@@ -1680,11 +1689,14 @@ class SettlementProcessor:
         else:
             return 0
 
-    def calc_education_demand(self, wb_tier_urban, wb_tier_rural):
+    def calc_education_demand(self, wb_tier_urban, wb_tier_rural, wb_tier_periurban):
         def education_demand(row):
             if row[SET_URBAN] == 1:  #  and row[SET_POP_FUTURE] >= 20:
                 return self.get_education_demand(people=row[SET_POP_FUTURE],
                                                               tier=wb_tier_urban)
+            elif row[SET_POP_CALIB] > 300:
+                return self.get_education_demand(people=row[SET_POP_FUTURE],
+                                                 tier=wb_tier_periurban)
             else:
                 #  elif row[SET_POP_FUTURE] >= 20:
                 return self.get_education_demand(people=row[SET_POP_FUTURE],
@@ -1694,11 +1706,14 @@ class SettlementProcessor:
         self.df['EducationDemand'] = self.df.apply(education_demand, axis=1)
         self.df['EducationDemand'] = 0
 
-    def calc_health_demand(self, wb_tier_urban, wb_tier_rural):
+    def calc_health_demand(self, wb_tier_urban, wb_tier_rural, wb_tier_periurban):
         def health_demand(row):
             if row[SET_URBAN] == 1:  # and row[SET_POP_FUTURE] >= 20:
                 return self.get_health_demand(people=row[SET_POP_FUTURE],
                                                         tier=wb_tier_urban)
+            elif row[SET_POP_CALIB] > 300:
+                return self.get_health_demand(people=row[SET_POP_FUTURE],
+                                              tier=wb_tier_periurban)
             else:
                 #  elif row[SET_POP_FUTURE] >= 20:
                 return self.get_health_demand(people=row[SET_POP_FUTURE],
@@ -1708,7 +1723,8 @@ class SettlementProcessor:
         self.df['HealthDemand'] = self.df.apply(health_demand, axis=1)
         self.df['HealthDemand'] = 0
 
-    def new_connections_prod(self, energy_per_hh_rural, energy_per_hh_urban,
+    def new_connections_prod(self, energy_per_hh_rural, energy_per_hh_urban, energy_per_hh_periurban,
                                num_people_per_hh_rural, num_people_per_hh_urban):
         self.df.loc[self.df[SET_URBAN] == 1, SET_NEW_CONNECTIONS_PROD] = self.df[SET_NEW_CONNECTIONS] + (self.df['HealthDemand'] + self.df['EducationDemand'])/(energy_per_hh_urban/num_people_per_hh_urban)
-        self.df.loc[self.df[SET_URBAN] == 0, SET_NEW_CONNECTIONS_PROD] = self.df[SET_NEW_CONNECTIONS] + (self.df['HealthDemand'] + self.df['EducationDemand']) / (energy_per_hh_rural / num_people_per_hh_rural)
+        self.df.loc[(self.df[SET_URBAN] == 0) & (self.df[SET_POP_CALIB] > 300), SET_NEW_CONNECTIONS_PROD] = self.df[SET_NEW_CONNECTIONS] + (self.df['HealthDemand'] + self.df['EducationDemand']) / (energy_per_hh_rural / num_people_per_hh_rural)
+        self.df.loc[(self.df[SET_URBAN] == 0) & (self.df[SET_POP_CALIB] <= 300), SET_NEW_CONNECTIONS_PROD] = self.df[SET_NEW_CONNECTIONS] + (self.df['HealthDemand'] + self.df['EducationDemand']) / (energy_per_hh_periurban / num_people_per_hh_rural)

@@ -171,7 +171,7 @@ elif choice == 2:
         onsseter.calc_health_demand(wb_tier_urban, wb_tier_rural)
         onsseter.new_connections_prod(energy_per_hh_rural, energy_per_hh_urban, num_people_per_hh_rural, num_people_per_hh_urban)
 
-        grid_calc = Technology(om_of_td_lines=0.03,
+        grid_calc = Technology(om_of_td_lines=0.1,
                                distribution_losses=float(specs[SPE_GRID_LOSSES][country]),
                                connection_cost_per_hh=150,
                                base_to_peak_load_ratio=float(specs[SPE_BASE_TO_PEAK][country]),
@@ -186,7 +186,7 @@ elif choice == 2:
                                    base_to_peak_load_ratio=0.9,
                                    capacity_factor=0.5,
                                    tech_life=30,
-                                   capital_cost={1: 16440, 100: 16440, 5000: 16440},
+                                   capital_cost={1: 10556, 100: 5000, 5000: 2457},
                                    om_costs=0.02,
                                    mg_hydro=True)
 
@@ -194,7 +194,7 @@ elif choice == 2:
                                   distribution_losses=0.05,
                                   connection_cost_per_hh=100,
                                   base_to_peak_load_ratio=0.9,
-                                  capital_cost={100: 3000, 1000: 3000, 10000: 3000},
+                                  capital_cost={100: 3000, 1000: 2889, 10000: 1773},
                                   om_costs=0.02,
                                   tech_life=20,
                                   mg_wind=True)
@@ -205,13 +205,13 @@ elif choice == 2:
                                 base_to_peak_load_ratio=0.9,
                                 tech_life=20,
                                 om_costs=0.02,
-                                capital_cost={50: 5280, 75: 5280, 100: 5280, 200: 5280},
+                                capital_cost={50: 14827, 75: 9498, 100: 5280, 200: 1773},
                                 mg_pv=True)
 
         sa_pv_calc = Technology(base_to_peak_load_ratio=0.9,
                                 tech_life=15,
                                 om_costs=0.02,
-                                capital_cost={0.020: 5870, 0.050: 5870, 0.100: 5870, 0.200: 5870, 0.300: 5870},
+                                capital_cost={0.020: 20000, 0.050:  11050, 0.100:  7660, 0.200:  5780, 0.300:  5070},
                                 standalone=True)
 
         mg_diesel_calc = Technology(om_of_td_lines=0.03,
@@ -222,7 +222,7 @@ elif choice == 2:
                                     tech_life=15,
                                     om_costs=0.1,
                                     efficiency=0.33,
-                                    capital_cost={100: 721, 1000: 721, 5000: 721, 25000: 721},
+                                    capital_cost={100: 721, 1000: 674, 5000: 467, 25000: 392},
                                     diesel_price=diesel_price,
                                     diesel_truck_consumption=33.7,
                                     diesel_truck_volume=15000,

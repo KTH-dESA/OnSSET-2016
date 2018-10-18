@@ -185,7 +185,7 @@ class Technology:
                          pv_om=0.015,  # annual OM cost of PV panels
                          diesel_om=0.1,  # annual OM cost of diesel generator
                          k_t=0.005):  # temperature factor of PV panels
-        os.chdir(r'C:\Users\Andreas\Documents\GitHub\PyOnSSET\pyonsset2018\Benin')
+        os.chdir(r'C:\Users\adm.esa\Documents\GitHub\PyOnSSET\pyonsset2018\Benin')
         ghi = pd.read_csv('TanzaniaHourlyLat11Long35Redigerad.csv', usecols=[4], sep=';', skiprows=21).as_matrix()
         # hourly GHI values downloaded from SoDa for one location in the country
         temp = pd.read_csv('TanzaniaTempLat11Long35.csv', usecols=[4], sep=';', skiprows=21).as_matrix()
@@ -1129,7 +1129,7 @@ class SettlementProcessor:
         considered electrified in the electrification algorithm
         """
         new_grid_capacity = 0
-        # grid_capacity_limit = 500000  # kW during model period
+        grid_capacity_limit = 99999999  # kW during model period
 
         df_neargrid = self.df.loc[self.df[SET_GRID_DIST_PLANNED] < pre_elec_dist]
 
@@ -1184,7 +1184,7 @@ class SettlementProcessor:
         Repeat with newly electrified settlements until no more are added
         """
         new_grid_capacity = 0
-        # grid_capacity_limit = 400000  # kW during model period
+        grid_capacity_limit = 99999999  # kW during model period
         x = (self.df[SET_X]/coordinate_units).tolist()
         y = (self.df[SET_Y]/coordinate_units).tolist()
         pop = self.df[SET_NEW_CONNECTIONS_PROD].tolist()
@@ -1335,7 +1335,8 @@ class SettlementProcessor:
                                                                                                      grid_capacity_limit)
 
         self.df[SET_LCOE_GRID] = 99
-        self.df[SET_LCOE_GRID] = self.df.apply(lambda row: grid_price if row[SET_ELEC_FUTURE] == 1 else 99, axis=1)
+        # self.df[SET_LCOE_GRID] = self.df.apply(lambda row: grid_price if row[SET_ELEC_FUTURE] == 1 else 99, axis=1)
+        self.df[SET_LCOE_GRID] = self.df.apply(lambda row: 0.01 if row[SET_ELEC_FUTURE] == 1 else 99, axis=1)
 
         self.df[SET_LCOE_GRID], self.df[SET_MIN_GRID_DIST] = self.elec_extension(grid_lcoes_rural, grid_lcoes_urban,
                                                                                  existing_grid_cost_ratio,

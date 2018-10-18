@@ -151,6 +151,7 @@ elif choice == 2:
         num_people_per_hh_urban = float(specs[SPE_NUM_PEOPLE_PER_HH_URBAN][country])
         max_grid_extension_dist = float(specs[SPE_MAX_GRID_EXTENSION_DIST][country])
         energy_per_hh_rural = wb_tiers_all[wb_tier_rural] * num_people_per_hh_rural
+        energy_per_hh_periurban = wb_tiers_all[wb_tier_peri_urban] * num_people_per_hh_rural
         energy_per_hh_urban = wb_tiers_all[wb_tier_urban] * num_people_per_hh_urban
 
         Technology.set_default_values(start_year=2016,
@@ -167,9 +168,9 @@ elif choice == 2:
                                       hv_lv_transformer_cost=5000,
                                       mv_increase_rate=0.1)
 
-        onsseter.calc_education_demand(wb_tier_urban, wb_tier_rural)
-        onsseter.calc_health_demand(wb_tier_urban, wb_tier_rural)
-        onsseter.new_connections_prod(energy_per_hh_rural, energy_per_hh_urban, num_people_per_hh_rural, num_people_per_hh_urban)
+        onsseter.calc_education_demand(wb_tier_urban, wb_tier_rural, wb_tier_peri_urban)
+        onsseter.calc_health_demand(wb_tier_urban, wb_tier_rural, wb_tier_peri_urban)
+        onsseter.new_connections_prod(energy_per_hh_rural, energy_per_hh_urban, energy_per_hh_periurban, num_people_per_hh_rural, num_people_per_hh_urban)
 
         grid_calc = Technology(om_of_td_lines=0.1,
                                distribution_losses=float(specs[SPE_GRID_LOSSES][country]),
@@ -249,7 +250,7 @@ elif choice == 2:
                                    diesel_truck_volume=15000)
 
 
-        onsseter.set_scenario_variables(energy_per_hh_rural, energy_per_hh_urban,
+        onsseter.set_scenario_variables(energy_per_hh_rural, energy_per_hh_urban, energy_per_hh_periurban,
                                         num_people_per_hh_rural, num_people_per_hh_urban)
 
         print('Preparing urban mg pv-diesel hybrid reference table')
@@ -268,7 +269,9 @@ elif choice == 2:
                                                     max_grid_extension_dist)
         grid_lcoes_urban = grid_calc.get_grid_table(energy_per_hh_urban, num_people_per_hh_urban,
                                                     max_grid_extension_dist)
-        onsseter.run_elec(grid_lcoes_rural, grid_lcoes_urban, grid_price,
+        grid_lcoes_periurban = grid_calc.get_grid_table(energy_per_hh_periurban, num_people_per_hh_rural,
+                                                    max_grid_extension_dist)
+        onsseter.run_elec(grid_lcoes_rural, grid_lcoes_urban, grid_lcoes_periurban, grid_price,
                           existing_grid_cost_ratio, max_grid_extension_dist, coordinate_units, grid_calc)
 
         onsseter.results_columns(mg_hydro_calc, mg_wind_calc, mg_pv_calc, sa_pv_calc,

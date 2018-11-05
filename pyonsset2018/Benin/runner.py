@@ -20,7 +20,7 @@ specs_path = filedialog.askopenfilename()
 
 specs = pd.read_excel(specs_path, index_col=0)
 
-coordinate_units = 1000 # 1000 if coordinates are in m, 1 if coordinates are in km
+coordinate_units = 1000  # 1000 if coordinates are in m, 1 if coordinates are in km
 
 # specs_directory = str(input('Enter the directory of the specs file: '))
 # os.chdir(specs_directory)
@@ -31,10 +31,12 @@ coordinate_units = 1000 # 1000 if coordinates are in m, 1 if coordinates are in 
 # except FileNotFoundError:
 #     specs = pd.read_excel(str(specs_path + '.xlsx'), index_col=0)
 
-countries = str(input('countries: ')).split()
-countries = specs.index.tolist() if 'all' in countries else countries
+countries = ['Benin']
+# countries = str(input('countries: ')).split()
+# countries = specs.index.tolist() if 'all' in countries else countries
 
-choice = int(input('1 to calibrate and prep, 2 to run a scenario: '))
+choice = 2
+# choice = int(input('1 to calibrate and prep, 2 to run a scenario: '))
 
 if choice == 0:
     messagebox.showinfo('OnSSET', 'Open the csv file with GIS data')
@@ -118,10 +120,11 @@ elif choice == 2:
           5: {} kWh/person/year""".format(wb_tiers_all[1], wb_tiers_all[2], wb_tiers_all[3],
                                           wb_tiers_all[4], wb_tiers_all[5]))
     wb_tier_urban = int(input('Enter the tier number for urban: '))
-    wb_tier_peri_urban = int(input('Enter the tier number for urban: '))
+    wb_tier_peri_urban = int(input('Enter the tier number for peri-urban: '))
     wb_tier_rural = int(input('Enter the tier number for rural: '))
 
-    diesel_high = True if 'y' in input('Use high diesel value? <y/n> ') else False
+    # diesel_high = True if 'y' in input('Use high diesel value? <y/n> ') else False
+    diesel_high = True
     diesel_tag = 'high' if diesel_high else 'low'
 
     messagebox.showinfo('OnSSET', 'Open the csv file with calibrated GIS data')
@@ -206,13 +209,16 @@ elif choice == 2:
                                 base_to_peak_load_ratio=0.9,
                                 tech_life=20,
                                 om_costs=0.02,
-                                capital_cost={50: 14827, 75: 9498, 100: 5280, 200: 1773},
+                                capital_cost={50: 14827, 75: 9498, 100: 5280, 200: 3081},
+                                # capital_cost={50: 12076, 75: 7735, 100: 4300, 200: 2510},
                                 mg_pv=True)
 
         sa_pv_calc = Technology(base_to_peak_load_ratio=0.9,
                                 tech_life=15,
                                 om_costs=0.02,
-                                capital_cost={0.020: 20000, 0.050:  11050, 0.100:  7660, 0.200:  5780, 0.300:  5070},
+                                capital_cost={0.020: 5000, 0.050: 3400, 0.100: 8000, 0.200: 4580, 0.300: 3330},
+                                # capital_cost={0.020: 20000, 0.050: 11050, 0.100: 7660, 0.200: 5780, 0.300: 5070},
+                                # capital_cost={0.020: 0.7*5000, 0.050:  0.7*3400, 0.100:  0.7*8000, 0.200:  0.7*4580, 0.300:  0.7*3330},
                                 standalone=True)
 
         mg_diesel_calc = Technology(om_of_td_lines=0.03,
@@ -269,8 +275,9 @@ elif choice == 2:
                                                     max_grid_extension_dist)
         grid_lcoes_urban = grid_calc.get_grid_table(energy_per_hh_urban, num_people_per_hh_urban,
                                                     max_grid_extension_dist)
-        grid_lcoes_periurban = grid_calc.get_grid_table(energy_per_hh_periurban, num_people_per_hh_rural,
-                                                    max_grid_extension_dist)
+        grid_lcoes_periurban = grid_lcoes_rural
+        # grid_lcoes_periurban = grid_calc.get_grid_table(energy_per_hh_periurban, num_people_per_hh_rural,
+        #                                             max_grid_extension_dist)
         onsseter.run_elec(grid_lcoes_rural, grid_lcoes_urban, grid_lcoes_periurban, grid_price,
                           existing_grid_cost_ratio, max_grid_extension_dist, coordinate_units, grid_calc)
 

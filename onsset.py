@@ -184,10 +184,9 @@ class Technology:
                          pv_om=0.015,  # annual OM cost of PV panels
                          diesel_om=0.1,  # annual OM cost of diesel generator
                          k_t=0.005):  # temperature factor of PV panels
-        os.chdir(r'C:\Users\asahl\Documents\GitHub\PyOnSSET\pyonsset2018\Benin')
-        ghi = pd.read_csv('TanzaniaHourlyLat11Long35Redigerad.csv', usecols=[4], sep=';', skiprows=21).as_matrix()
+        ghi = pd.read_csv('Supplementary_files\GHI_hourly.csv', usecols=[4], sep=';', skiprows=21).as_matrix()
         # hourly GHI values downloaded from SoDa for one location in the country
-        temp = pd.read_csv('TanzaniaTempLat11Long35.csv', usecols=[4], sep=';', skiprows=21).as_matrix()
+        temp = pd.read_csv('Supplementary_files\Temperature_hourly.csv', usecols=[4], sep=';', skiprows=21).as_matrix()
         # hourly temperature values downloaded from SoDa for one location in the country
         hour_numbers = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23) * 365
 

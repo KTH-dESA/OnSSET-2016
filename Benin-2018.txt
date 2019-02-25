@@ -1,0 +1,2 @@
+This branch contains the files used for the OnSSET runs for the project "Electrification Pathways for Benin" undertaken by KTH-dESA.
+Find more information, including the project report in English and French, here: http://www.onsset.org/electrification-pathways-for-benin.html

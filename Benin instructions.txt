@@ -1,7 +1,0 @@
-CSV file location: N:\OnSSET Benin\OnSSET code\GIS_data_Input
-
-Save calibrated files here: N:\OnSSET Benin\OnSSET code\Calibrated file
-
-Save result files here: N:\OnSSET Benin\OnSSET code\Results file
-
-Check calibration against the excel file provided
